@@ -1,0 +1,997 @@
+@font-face {
+  font-family: 'Kenney';
+  src: local('Segoe UI');
+}
+
+/* ============================================================
+   BẢNG MÀU / KHUNG UI — dựng theo ảnh mẫu tham chiếu:
+   mọi khung đều là "viền ngoài nâu đậm + đường kem mảnh bên trong + nền gỗ gradient",
+   bo góc ~10px, nhãn vàng in hoa cỡ nhỏ, số/chữ chính màu kem, nút đang chọn tô CAM.
+   Trước đây mỗi cụm một phong cách (9-slice gỗ, nút tròn bóng, hộp đen bo tròn) nên
+   nhìn như 2-3 ngôn ngữ thiết kế trên cùng màn hình.
+   ============================================================ */
+:root {
+  --sea:          #3f8fa3;
+  --wood-top:     #8a4d2e;
+  --wood-bot:     #63341f;
+  --frame-line:   #381d10;   /* viền ngoài đậm */
+  --frame-inner:  #e3cb9a;   /* đường kem mảnh bên trong */
+  --parchment:    #f0e4c6;
+  --ink:          #4a3520;
+  --text-cream:   #f7ecd2;
+  --text-gold:    #f2c368;
+  --accent:       #e8952f;   /* trạng thái đang chọn */
+  --btn-face:     #5f93a5;
+  --btn-face-hi:  #74a9ba;
+}
+
+/* Khung dùng chung cho MỌI cụm UI trong trận */
+.ui-frame {
+  background: linear-gradient(180deg, var(--wood-top) 0%, var(--wood-bot) 100%);
+  border: 3px solid var(--frame-line);
+  border-radius: 10px;
+  box-shadow: inset 0 0 0 2px rgba(227, 203, 154, 0.5),
+              0 3px 0 rgba(0, 0, 0, 0.35),
+              0 5px 12px rgba(0, 0, 0, 0.35);
+  color: var(--text-cream);
+}
+/* Biến thể giấy da (panel thông tin/nhiệm vụ trong ảnh mẫu) */
+.ui-frame.parchment {
+  background: linear-gradient(180deg, #f6ecd2 0%, var(--parchment) 100%);
+  color: var(--ink);
+  box-shadow: inset 0 0 0 2px rgba(122, 85, 46, 0.35),
+              0 3px 0 rgba(0, 0, 0, 0.3),
+              0 5px 12px rgba(0, 0, 0, 0.3);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0; padding: 0;
+  /* Nền lớp NGOÀI CÙNG cũng là màu biển (không phải navy tối như trước): #stage đã phủ
+     kín viewport, nhưng nếu có lệch vài pixel do làm tròn/subpixel/thanh cuộn thì phần
+     hở sẽ lộ nền của lớp này — để trùng màu nước thì dù hở cũng không thấy dải màu lạ. */
+  background: var(--sea);
+  color: #f2e9d8;
+  font-family: 'Trebuchet MS', 'Segoe UI', sans-serif;
+  overflow: hidden;
+  height: 100%;
+  -webkit-user-select: none; user-select: none;
+}
+/* ---------------- Khung tổng ----------------
+   #stage chỉ làm nhiệm vụ canh giữa #app, KHÔNG chia dải/không chiếm chỗ layout.
+   Toàn bộ HUD nằm bên trong #app dưới dạng overlay tuyệt đối (position:absolute) đè
+   lên canvas — trước đây xếp HUD thành phần tử anh em trong flex khiến map bị đẩy co
+   lại đúng bằng phần UI chiếm, bỏ phí gần 2/3 màn hình thành nền đen. */
+body { display: block; }
+
+#stage {
+  position: fixed; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  overflow: hidden;
+  /* BIỂN LIỀN MẠCH: lát ĐÚNG texture nước mà map dùng bên trong canvas (waterBg), KHÔNG
+     phủ lớp tối lên trên — nhờ vậy nước ngoài khung nối liền với nước trong khung, đảo
+     cỏ nổi giữa biển đúng như ảnh mẫu, không còn mảng đơn sắc chết ở bất kỳ đâu.
+     Kích thước ô lát được main.js đồng bộ theo --game-scale (ô gốc 64px) để 2 bên
+     không lệch cỡ vảy nước. */
+  background-color: var(--sea);
+  background-image: url('../assets/tiles/water_bg.png');
+  background-repeat: repeat;
+  background-size: var(--water-tile, 64px) var(--water-tile, 64px);
+  image-rendering: pixelated;
+}
+
+/* Kích thước LOGIC vẫn 960x600 (canvas + toàn bộ toạ độ game không đổi) — phóng to
+   phần HIỂN THỊ bằng zoom (tính theo cửa sổ thực tế ở main.js:fitGameScale) thay vì
+   để cố định nhỏ giữa trang web lớn hơn nhiều. Dùng `zoom` thay vì `transform:
+   scale` vì zoom co giãn ngay ở bước layout nên flex canh giữa luôn đúng theo kích
+   thước ĐÃ phóng to, không bị lệch tâm như transform (vốn chỉ scale phần vẽ sau
+   layout, khiến toạ độ căn giữa tính theo kích thước CHƯA phóng to).
+   Vì HUD nằm TRONG #app nên zoom phóng cả map lẫn HUD cùng lúc → hệ toạ độ logic
+   960x600 giờ trải kín màn hình, tức neo HUD ở góc 960x600 chính là neo ở góc màn hình. */
+/* KHÔNG viền/bo góc quanh #app khi đang chơi: mép canvas vốn đã là nước, nối thẳng
+   ra biển của #stage nên phải để trơn thì mới liền mạch (viền gỗ cũ tạo ra đúng cái
+   "khung đen cắt ngang biển" cần loại bỏ). Menu/level-select vẫn có khung riêng. */
+#app {
+  position: relative;
+  flex: 0 0 auto;
+  width: 960px;
+  height: 600px;
+  background: transparent;
+  overflow: hidden;
+  zoom: var(--game-scale, 1);
+}
+
+.screen {
+  position: absolute; inset: 0;
+  z-index: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  /* Tông ấm hơn (ngả nâu ở rìa) để khớp với bảng màu gỗ --wood-top/--frame-line dùng
+     xuyên suốt HUD trong trận, thay vì gradient xanh lạnh đứng riêng 1 phong cách. */
+  background: radial-gradient(120% 90% at 50% -8%, #33503c 0%, #223a2a 55%, #17251c 100%);
+  overflow: hidden;
+}
+/* Mây động: nhiều cụm mây riêng biệt (kích thước/độ cao/tốc độ khác nhau), mỗi cụm
+   dùng 1 frame tĩnh (không đổi frame to/nhỏ — 4 frame gốc trong assets vốn là hiệu ứng
+   "breathing" của 1 đám mây trong aseprite, không phải hình mây khác nhau) và trôi
+   ngang liên tục, so le thời điểm để trông như nhiều đám mây lần lượt bay qua. */
+.cloud-layer {
+  position: absolute; inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+}
+.cloud {
+  position: absolute; left: -320px;
+  background-repeat: no-repeat; background-size: contain; background-position: center;
+  animation-name: cloudDrift; animation-timing-function: linear; animation-iteration-count: infinite;
+}
+.cloud-1 { top: 3%;  width: 300px; height: 134px; background-image: url('../assets/decorations/cloud_a1.png'); animation-duration: 46s; animation-delay: -6s; }
+.cloud-2 { top: 24%; width: 190px; height: 84px;  background-image: url('../assets/decorations/cloud_b1.png'); animation-duration: 60s; animation-delay: -32s; --cloud-opacity: 0.85; }
+.cloud-3 { top: 11%; width: 230px; height: 102px; background-image: url('../assets/decorations/cloud_a1.png'); animation-duration: 37s; animation-delay: -18s; --cloud-opacity: 0.7; }
+.cloud-4 { top: 33%; width: 160px; height: 70px;  background-image: url('../assets/decorations/cloud_b1.png'); animation-duration: 70s; animation-delay: -50s; --cloud-opacity: 0.6; }
+@keyframes cloudDrift {
+  0%   { transform: translateX(0); opacity: 0; }
+  6%   { opacity: var(--cloud-opacity, 1); }
+  50%  { transform: translateX(620px); }
+  94%  { opacity: var(--cloud-opacity, 1); }
+  100% { transform: translateX(1240px); opacity: 0; }
+}
+.hidden { display: none !important; }
+
+/* Tiểu cảnh góc màn (Menu/Chọn Màn) — tái dùng NGUYÊN sprite sheet vốn đã tải cho
+   map (tree1/sheep_idle/rock1, xem assets.js) nên không tốn thêm tài nguyên, chỉ để
+   góc màn có sức sống thay vì mảng gradient trống. Neo GÓC dưới màn (không phải dải
+   ngang trải hết) để không bao giờ đụng cụm nút/danh sách luôn nằm giữa hoặc trên.
+   Mặc định neo trái; `.ground-decor-right` neo phải cho màn khác đỡ trùng bố cục. */
+.ground-decor {
+  position: absolute; left: 18px; bottom: 0;
+  z-index: -1; pointer-events: none;
+  width: 200px; height: 110px;
+}
+.ground-decor-right { left: auto; right: 18px; }
+.ground-decor-right .gd-tree { left: auto; right: 6px; }
+.ground-decor-right .gd-sheep { left: auto; right: 92px; }
+.ground-decor-right .gd-rock { left: auto; right: 150px; }
+.gd-item { position: absolute; bottom: 0; image-rendering: pixelated; background-repeat: no-repeat; }
+/* Cây đung đưa — sprite sheet 6 khung vuông (tree1.png), steps() chạy qua từng khung
+   rời rạc như animation thật thay vì mờ nhoè nếu dùng transform/scale suông.
+   background-size/position dùng % (KHÔNG px) — #app bọc ngoài có `zoom` (xem
+   fitGameScale trong main.js), mà `zoom` + background-size tính bằng px bị lệch
+   (Chromium tính kích thước box đã nhân zoom nhưng background-size px thì không,
+   khiến khung hiện ra RỘNG HƠN 1 khung thật, lộ luôn 1 phần khung bên cạnh — trông
+   như 2 cây chồng nhau). % thì luôn tính theo kích thước box SAU zoom nên khớp đúng
+   dù zoom bao nhiêu. Công thức chuẩn cho N khung: background-size N*100%, animate
+   position 0%->100%, steps(N-1) (không phải steps(N) — N-1 mới rơi đúng biên khung). */
+.gd-tree {
+  left: 10px; width: 96px; height: 96px;
+  background-image: url('../assets/decorations/tree1.png');
+  background-size: 600% 100%; /* 6 khung */
+  animation: gdTreeSway 2.6s steps(5) infinite;
+}
+@keyframes gdTreeSway { from { background-position-x: 0%; } to { background-position-x: 100%; } }
+/* Cừu đứng thở — sprite sheet 6 khung (sheep_idle.png), cùng kỹ thuật % ở trên. */
+.gd-sheep {
+  left: 96px; width: 46px; height: 46px;
+  background-image: url('../assets/decorations/sheep_idle.png');
+  background-size: 600% 100%; /* 6 khung */
+  animation: gdSheepIdle 1.8s steps(5) infinite;
+}
+@keyframes gdSheepIdle { from { background-position-x: 0%; } to { background-position-x: 100%; } }
+/* Tảng đá — ảnh tĩnh, không cần animation. */
+.gd-rock {
+  left: 150px; width: 34px; height: 34px;
+  background-image: url('../assets/decorations/rock1.png');
+  background-size: contain; background-repeat: no-repeat;
+}
+
+/* Dải diễu hành Menu chính (thay .ground-decor cũ CHỈ ở Menu — level-select vẫn giữ
+   nguyên .ground-decor-right, không đụng tới). 3 hero ĐỨNG YÊN tại chỗ, chỉ chạy
+   animation bước chân qua từng khung; 2 lớp CÂY phía sau mới là thứ di chuyển ->
+   ảo giác cả nhóm đang băng qua rừng, rẻ hơn nhiều so với thực sự trượt 3 sprite
+   ngang màn hình. z-index:-1 + pointer-events:none nên không bao giờ che/chặn cụm
+   nút hay panel cài đặt (bottom:16px) — panel mở chỉ đơn giản đè lên trên. */
+.hero-parade {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 88px;
+  z-index: -1; overflow: hidden; pointer-events: none;
+}
+/* Cuộn vô hạn liền mạch CHỈ bằng background-position % (không lặp DOM): với
+   background-size width = 50% (tile đúng nửa khung chứa), dịch position 0% -> -100%
+   luôn bằng ĐÚNG 1 lần bề rộng tile (offset = (container-tile)*pct, tile=50% nên
+   0%..-100% = -1 tile khít biên) — % tính lại theo kích thước ĐÃ zoom nên không giật
+   dù zoom bao nhiêu, khác lỗi px+zoom đã ghi ở .gd-tree. Cây CỐ Ý thấp hơn hẳn hero
+   (xem .parade-hero) — cây là NỀN phía sau, hero mới là tiền cảnh, đầu hero phải
+   nhô rõ lên trên tán cây thì mới đọc được là "hero đi trước, rừng lướt qua sau".*/
+.parade-trees {
+  position: absolute; left: 0; bottom: 0; width: 100%;
+  background-repeat: repeat-x; background-size: 50% 100%;
+  animation: paradeTreeScroll linear infinite;
+}
+.parade-trees-back {
+  height: 34px; opacity: 0.45;
+  background-image: url('../assets/decorations/tree2.png');
+  animation-duration: 24s;
+}
+.parade-trees-front {
+  height: 48px; opacity: 0.85;
+  background-image: url('../assets/decorations/tree1.png');
+  animation-duration: 12s;
+}
+@keyframes paradeTreeScroll { from { background-position-x: 0%; } to { background-position-x: -100%; } }
+
+/* Nền đất — vá khoảng trống ĐEN lộ ra giữa các gốc cây (ảnh cây rời rạc theo tile,
+   khe hở giữa 2 cây liền kề không có gì che), khiến cây/hero như đang lửng lơ giữa
+   không trung thay vì đứng trên mặt đất. Đặt DƯỚI CÙNG (con đầu tiên trong DOM) để
+   cây/hero vẽ đè lên trên đúng chỗ có thân, còn khe hở thì lộ màu đất bên dưới ra.
+   Tông màu tái dùng ĐÚNG bảng path/pathEdge của theme "forest" trong map.js (#b08c5a/
+   #6e5230) cho khớp palette đất rừng dùng trong map thật, không bịa màu mới. */
+.parade-ground {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 26px;
+  background: linear-gradient(180deg, #2e4a2a 0%, #4a3820 45%, #6e5230 100%);
+}
+
+/* 3 hero xếp giữa dải, chỉ chạy animation bước chân (kỹ thuật % qua từng khung rời
+   rạc giống .gd-tree — an toàn với zoom của #app). Cung Thủ + Giáo mượn tạm bản màu
+   TÍM của pack rồi nhuộm xanh dương bằng filter — ĐÚNG filter hero.js dùng khi vẽ
+   Hero Giáo trong trận (xem hero.js _drawSprite: hue-rotate 200deg + saturate 1.3 +
+   brightness 1.05) để khớp tông phe người chơi như thẻ tướng ở màn chọn tướng.
+   bottom:0 = mốc "mặt đất" thật (khớp đáy .parade-ground/.parade-trees, cùng bottom:0
+   trong .hero-parade) — KHÔNG dùng bottom:2px như trước, vì đó chỉ là số chỉnh tay
+   theo mép NGOÀI khung ảnh, không phải theo chân nhân vật thật trong khung. */
+.parade-heroes {
+  position: absolute; left: 50%; bottom: 0; transform: translateX(-50%);
+  display: flex; align-items: flex-end; gap: 12px;
+}
+.parade-hero { width: 58px; height: 58px; background-repeat: no-repeat; image-rendering: pixelated; }
+/* Mỗi khung nguồn (background-size Y:100%, không crop dọc) chừa 1 khoảng trong suốt
+   khác nhau dưới chân tuỳ sprite — đo thật bằng cách quét kênh alpha khung chạy đầu
+   tiên của từng ảnh (cùng kỹ thuật botN trong hero.js/enemy.js), rồi kéo cả khung
+   xuống đúng bằng khoảng trống đó (margin-bottom ÂM) để chân THẬT chạm mốc bottom:0,
+   không phải mép ngoài khung ảnh. Trước đây cả 3 hero neo theo mép khung nên đều lơ
+   lửng cách mặt đất ~19-24px, LẠI KHÔNG ĐỀU NHAU giữa 3 hero (Giáo lệch hẳn 5px so
+   với Cung Thủ/Khiên do khung lancer cao hơn) — nhìn như dán nổi trên nền cây, giả.
+   archer/purple_archer_run: botN .703 -> 58*(1-.703)=17px. spear/purple_lancer_run:
+   botN .616 (khung 320 cao hơn hẳn 192 nên đáy khung xa chân hơn) -> 22px.
+   tank/blue_warrior_run: botN .708 -> 17px. */
+.parade-hero-archer {
+  background-image: url('../assets/units/purple_archer_run.png');
+  background-size: 400% 100%; /* 4 khung */
+  filter: hue-rotate(200deg) saturate(1.3) brightness(1.05);
+  animation: paradeRunFrames 0.7s steps(3) infinite;
+  margin-bottom: -17px;
+}
+.parade-hero-spear {
+  background-image: url('../assets/units/purple_lancer_run.png');
+  background-size: 600% 100%; /* 6 khung */
+  filter: hue-rotate(200deg) saturate(1.3) brightness(1.05);
+  animation: paradeRunFrames 0.5s steps(5) infinite;
+  animation-delay: -0.15s;
+  margin-bottom: -22px;
+}
+.parade-hero-tank {
+  background-image: url('../assets/units/blue_warrior_run.png');
+  background-size: 600% 100%; /* 6 khung */
+  animation: paradeRunFrames 0.5s steps(5) infinite;
+  animation-delay: -0.3s;
+  margin-bottom: -17px;
+}
+@keyframes paradeRunFrames { from { background-position-x: 0%; } to { background-position-x: 100%; } }
+
+/* ---------------- Main Menu ---------------- */
+#screen-menu h1 {
+  font-size: 46px;
+  letter-spacing: 2px;
+  color: #ffdc78;
+  text-shadow: 3px 3px 0 #5a3d15, 0 0 24px rgba(255,180,60,0.5);
+  margin-bottom: 6px;
+}
+#screen-menu .subtitle {
+  color: #cfe8d8;
+  margin-bottom: 40px;
+  font-size: 14px;
+  opacity: 0.85;
+}
+/* Nút menu dùng CHUNG hệ gỗ-vàng (--wood-top/--frame-line/--accent) với toàn bộ HUD
+   trong trận, thay cho border-image "btn_big_blue/red" phẳng màu kẹo cũ — lệch hẳn
+   phong cách pixel-art gỗ tối của phần còn lại nên nhìn như dán từ 1 bộ UI khác vào. */
+.menu-btn {
+  width: 240px;
+  padding: 14px 20px;
+  margin: 8px 0;
+  font-size: 18px;
+  font-weight: bold;
+  color: #3a2208;
+  text-shadow: 1px 1px 0 rgba(255,255,255,0.3);
+  background: linear-gradient(180deg, #f3ab4d 0%, var(--accent) 100%);
+  border: 3px solid var(--frame-line);
+  border-radius: 10px;
+  box-shadow: inset 0 0 0 2px rgba(255,240,200,0.55), 0 3px 0 rgba(0,0,0,0.35), 0 5px 12px rgba(0,0,0,0.35);
+  cursor: pointer;
+  transition: filter 0.08s, transform 0.05s;
+}
+.menu-btn:hover { filter: brightness(1.12); }
+.menu-btn:active { transform: translateY(2px); filter: brightness(0.95); }
+.menu-btn.secondary {
+  background: linear-gradient(180deg, #c4674a 0%, #a34a30 100%);
+  color: var(--text-cream); text-shadow: 1px 1px 0 rgba(0,0,0,0.5);
+  box-shadow: inset 0 0 0 2px rgba(227,203,154,0.4), 0 3px 0 rgba(0,0,0,0.35), 0 5px 12px rgba(0,0,0,0.35);
+}
+.menu-btn.btn-compact { width: auto; padding: 6px 10px; margin: 0; font-size: 13px; }
+
+/* Xếp DỌC từng dòng thay vì 1 hàng ngang — hàng ngang từng đủ cho 2 mục ngắn (tắt
+   âm/âm lượng), nhưng dòng "Dev Mode (vàng vô hạn + mở hết map)" dài hơn nhiều nên
+   bị bóp xuống còn vài ký tự/dòng trong phần flex-space còn lại, vỡ layout. */
+#settings-panel {
+  position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
+  background: transparent;
+  border: 18px solid transparent;
+  border-image: url('../assets/ui/paper_regular.png') 44 52 45 52 fill;
+  padding: 10px 14px;
+  font-size: 13px; display: flex; flex-direction: column; align-items: stretch; gap: 10px;
+  width: 280px;
+  color: #3a2a18;
+}
+#settings-panel label { display: flex; align-items: center; gap: 6px; }
+#dev-mode-row label { align-items: flex-start; line-height: 1.35; }
+#dev-mode-row input[type="checkbox"] { margin-top: 3px; flex: 0 0 auto; }
+#settings-panel #btn-settings-close { align-self: center; }
+.icon-inline {
+  display: inline-block; width: 16px; height: 16px;
+  background-repeat: no-repeat; background-size: contain;
+  vertical-align: middle; image-rendering: pixelated;
+}
+.icon-inline.gear { background-image: url('../assets/ui/icon_gear.png'); }
+.icon-inline.music { background-image: url('../assets/ui/icon_music.png'); }
+/* Dùng ảnh icon_coin.png thay cho emoji 💰 trong text — một số môi trường/font
+   thiếu glyph màu cho emoji sẽ render 💰 thành ô vuông/"¤" trông như lỗi giá tiền. */
+.icon-inline.coin { background-image: url('../assets/ui/icon_coin.png'); }
+
+/* ---------------- Level Select (16 map, 1 hàng ngang đúng thứ tự, cuộn ngang) ---------------- */
+#screen-levelselect { justify-content: flex-start; padding-top: 64px; }
+#screen-levelselect h2 { color: #ffdc78; font-size: 24px; margin: 0 0 14px; }
+#level-list {
+  display: flex; flex-direction: row; gap: 16px;
+  width: 900px; max-width: 92vw;
+  overflow-x: auto; overflow-y: hidden;
+  padding: 10px 10px 18px;
+  scroll-behavior: smooth;
+  scrollbar-width: thin; scrollbar-color: var(--accent) rgba(0,0,0,0.3);
+}
+/* Thanh cuộn mặc định của trình duyệt (xám bệch, bo vuông) lệch hẳn phong cách —
+   đổi thành thanh mảnh tông gỗ-vàng đồng bộ với UI còn lại. */
+#level-list::-webkit-scrollbar { height: 8px; }
+#level-list::-webkit-scrollbar-track { background: rgba(0,0,0,0.3); border-radius: 4px; }
+#level-list::-webkit-scrollbar-thumb { background: var(--accent); border-radius: 4px; }
+#level-list::-webkit-scrollbar-thumb:hover { background: #f3ab4d; }
+
+.level-card {
+  flex: 0 0 auto;
+  width: 168px; height: 218px;
+  background: transparent;
+  border: 16px solid transparent;
+  border-image: url('../assets/ui/paper_regular.png') 44 52 45 52 fill;
+  color: #3a2a18;
+  display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
+  padding: 4px 3px;
+  cursor: pointer;
+  position: relative;
+  transition: transform 0.12s;
+}
+.level-card:hover:not(.locked) { transform: translateY(-6px); box-shadow: 0 8px 18px rgba(0,0,0,0.4); }
+.level-card.locked { filter: grayscale(0.8) brightness(0.7); cursor: not-allowed; }
+.level-card.boss-map { box-shadow: 0 0 0 2px #ffdc78 inset; }
+.level-card.boss-map:hover:not(.locked) { box-shadow: 0 0 0 2px #ffdc78 inset, 0 8px 18px rgba(255,80,40,0.45); }
+.level-card .level-num {
+  position: absolute; top: 6px; left: 6px; z-index: 1;
+  width: 22px; height: 22px; border-radius: 50%;
+  background: rgba(0,0,0,0.55); color: #ffdc78;
+  font-size: 11px; font-weight: bold;
+  display: flex; align-items: center; justify-content: center;
+}
+.level-card .season-badge { position: absolute; top: 6px; right: 8px; font-size: 16px; z-index: 1; }
+.level-card .thumb {
+  width: 100%; height: 78px;
+  border-radius: 6px; margin-bottom: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 32px;
+  border: 2px solid rgba(0,0,0,0.2);
+}
+/* Màu thumb PHẢI khớp đúng màu nền thật trong game (THEME_BASE ở map.js) — trước
+   dùng màu pastel tự chọn (hồng/vàng nhạt kiểu kẹo) không liên quan gì tới màu đất
+   thật của map đó, khiến ảnh xem trước "nói dối" người chơi về không khí màn chơi. */
+.level-card.theme-forest .thumb { background: #3f7a3a; }
+.level-card.theme-desert .thumb { background: #dcb877; }
+.level-card.theme-castle .thumb { background: #5a5a72; }
+.level-card.theme-spring .thumb { background: #5a9a5a; }
+.level-card.theme-summer .thumb { background: #5a9a48; }
+.level-card.theme-autumn .thumb { background: #8a7a3f; }
+.level-card.theme-winter .thumb { background: #c8dce8; }
+.level-card.theme-volcano .thumb { background: #6b5646; }
+.level-card .name { font-weight: bold; font-size: 13px; line-height: 1.25; text-align: center; margin-bottom: 6px; }
+.level-card.boss-map .name { color: #8a2a1a; }
+.level-card .stars { font-size: 15px; letter-spacing: 2px; color: #a8791c; margin-bottom: 6px; }
+.level-card .lock-icon { position: absolute; bottom: 10px; right: 10px; font-size: 18px; }
+.level-card .play-tag {
+  margin-top: auto; background: #ffdc78; color: #2a2210; font-weight: bold;
+  padding: 4px 12px; border-radius: 12px; font-size: 12px;
+  border: 2px solid #a8791c;
+}
+#back-to-menu { position: absolute; top: 16px; left: 16px; }
+
+/* ---------------- Hero Select (3 lớp cố định, hiện sau khi chọn map) ---------------- */
+#back-to-levelselect { position: absolute; top: 16px; left: 16px; }
+#hero-list { display: flex; flex-direction: row; gap: 20px; }
+.hero-card {
+  width: 190px;
+  background: transparent;
+  border: 16px solid transparent;
+  border-image: url('../assets/ui/paper_regular.png') 44 52 45 52 fill;
+  color: #3a2a18;
+  display: flex; flex-direction: column; align-items: center;
+  padding: 10px 8px 14px;
+  cursor: default;
+  transition: transform 0.12s;
+}
+.hero-card:hover { transform: translateY(-6px); box-shadow: 0 8px 18px rgba(0,0,0,0.4); }
+/* Ảnh thẻ = đúng khung Idle đầu tiên (frame 0) của sprite nhân vật thật trong trận,
+   thay cho emoji — cùng cách "crop unit sprite làm icon tĩnh" đã dùng cho skill-icon. */
+.hero-card .hero-icon {
+  width: 84px; height: 84px; margin-bottom: 2px;
+  background-repeat: no-repeat; image-rendering: pixelated;
+  filter: drop-shadow(1px 2px 1px rgba(0,0,0,0.35));
+}
+.hero-sprite-archer { background-image: url('../assets/units/blue_archer_idle.png'); background-size: 504px 84px; background-position: 0 0; }
+.hero-sprite-tank { background-image: url('../assets/units/blue_warrior_idle.png'); background-size: 672px 84px; background-position: 0 0; }
+/* Lính Giáo: pack không có bản xanh dương (chỉ đen/tím), mượn tạm bản tím rồi nhuộm
+   xanh bằng filter — ĐÚNG filter đang dùng khi vẽ Hero thật trong hero.js, để thẻ
+   chọn tướng khớp 100% màu với nhân vật sẽ xuất hiện trong trận. */
+.hero-sprite-spear {
+  /* Khung gốc của sprite này là 320x320 (so với 192x192 của archer/tank) nhưng nhân
+     vật + giáo chỉ chiếm một vùng nhỏ ở góc trên-trái khung (phần còn lại là đệm
+     trống) — nếu scale nguyên khung như archer/tank thì nhân vật hiện ra bé tí và
+     lệch lên trên. Zoom + dịch riêng theo đúng vùng chiếm thực (~220x220 từ x0,y10)
+     để nhân vật lấp đầy ô icon tương đương 2 thẻ còn lại. */
+  background-image: url('../assets/units/purple_lancer_idle.png'); background-size: 1466.18px 122.18px; background-position: 0 -3.82px;
+  filter: hue-rotate(200deg) saturate(1.3) brightness(1.05) drop-shadow(1px 2px 1px rgba(0,0,0,0.35));
+}
+.hero-card .hero-name { font-weight: bold; font-size: 16px; margin-bottom: 4px; }
+.hero-card .hero-desc { font-size: 11px; line-height: 1.4; text-align: center; opacity: 0.85; margin-bottom: 10px; min-height: 44px; }
+.hero-card .hero-passive, .hero-card .hero-skill {
+  width: 100%; font-size: 11px; line-height: 1.35; text-align: left; margin-bottom: 6px;
+}
+.hero-card .tag {
+  display: inline-block; font-size: 9px; font-weight: bold; letter-spacing: 0.04em;
+  background: rgba(0,0,0,0.35); color: #f2c368; padding: 1px 6px; border-radius: 8px;
+  margin-right: 4px; text-transform: uppercase;
+}
+.hero-card .hero-pick { width: 100%; margin-top: 8px; }
+
+/* ---------------- In-game ---------------- */
+#game-container { position: absolute; inset: 0; }
+#gameCanvas { display: block; background: transparent; cursor: crosshair; image-rendering: pixelated; }
+
+/* Menu / Level select vẫn giữ khung bo góc riêng (không phải cảnh chơi nên không cần
+   nối liền với biển) */
+.screen {
+  border: 3px solid var(--frame-line);
+  border-radius: 10px;
+  box-shadow: inset 0 0 0 2px rgba(227,203,154,0.22), 0 10px 40px rgba(0,0,0,0.6);
+}
+
+/* Dải tài nguyên góc trên trái. Đáy khối phải <= y≈54 (toạ độ logic) để nằm trên mép
+   trên của đường đi cao nhất trong 16 map (y≈77 trừ nửa bề rộng đường 23). */
+#hud-top {
+  position: absolute; top: 3px; left: 6px; z-index: 5;
+  display: inline-flex; align-items: center; gap: 9px;
+  padding: 3px 11px;
+  pointer-events: none;
+}
+#hud-top .res { display: flex; align-items: center; gap: 6px; }
+#hud-top .res-ico {
+  width: 20px; height: 20px; flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 15px; line-height: 1;
+  filter: drop-shadow(1px 1px 0 rgba(0,0,0,0.55));
+}
+#hud-top .res-ico.coin {
+  font-size: 0;
+  background-image: url('../assets/ui/icon_coin.png');
+  background-size: contain; background-repeat: no-repeat; background-position: center;
+  image-rendering: pixelated;
+}
+#hud-top .res-txt { display: flex; flex-direction: column; line-height: 1.05; }
+#hud-top .res-label {
+  font-size: 8px; font-weight: bold; letter-spacing: 0.09em;
+  color: var(--text-gold); text-shadow: 1px 1px 0 rgba(0,0,0,0.6);
+}
+#hud-top .res-val {
+  font-size: 16px; font-weight: bold;
+  color: var(--text-cream); text-shadow: 1px 1px 0 rgba(0,0,0,0.75);
+  font-variant-numeric: tabular-nums;
+}
+#hud-top .res-div {
+  width: 2px; align-self: stretch; margin: 1px 0;
+  background: rgba(0,0,0,0.32);
+  box-shadow: 1px 0 0 rgba(227,203,154,0.22);
+}
+
+/* Banner giữa trên — tên màn + trạng thái, canh giữa theo chiều ngang map */
+/* Đáy banner phải <= y≈47 (logic) — mép trên đường đi cao nhất ở khu giữa map là
+   y≈70, trừ nửa bề rộng đường 23. */
+#hud-banner {
+  position: absolute; top: 2px; left: 50%; transform: translateX(-50%);
+  z-index: 5; pointer-events: none;
+  padding: 1px 20px 2px; text-align: center; min-width: 180px;
+}
+#hud-banner .banner-sub {
+  font-size: 8px; font-weight: bold; letter-spacing: 0.13em; text-transform: uppercase;
+  color: var(--text-gold); text-shadow: 1px 1px 0 rgba(0,0,0,0.6);
+}
+#hud-banner .banner-main {
+  font-size: 13px; font-weight: bold; line-height: 1.1;
+  color: var(--text-cream); text-shadow: 1px 1px 0 rgba(0,0,0,0.75);
+}
+#hud-banner .banner-note {
+  font-size: 8px; letter-spacing: 0.05em; line-height: 1.1;
+  color: rgba(247,236,210,0.78); text-shadow: 1px 1px 0 rgba(0,0,0,0.6);
+}
+
+/* Cụm điều khiển góc trên phải — 1 khung ngang gọn chứa: pause | tốc độ+auto-advance
+   (1 khối segmented liền) | thoát. Giữ THẤP (đáy <= y≈54) cho vùng an toàn. */
+#hud-controls {
+  position: absolute; top: 3px; right: 8px; z-index: 6;
+  display: flex; gap: 2px; align-items: center;
+  padding: 2px 5px;
+  background: linear-gradient(180deg, var(--wood-top) 0%, var(--wood-bot) 100%);
+  border: 2px solid var(--frame-line);
+  border-radius: 7px;
+  box-shadow: inset 0 0 0 1px rgba(227,203,154,0.4), 0 2px 0 rgba(0,0,0,0.3);
+  pointer-events: auto;
+}
+#speed-group { display: flex; }
+/* Khối segmented liền khối: 1x/2x/3x + toggle auto-advance dính sát nhau trong
+   1 khung viền chung, chỉ có vạch chia mảnh giữa các ô — thay cho 3-4 nút rời
+   rạc tách biệt như bản cũ, giúp cụm điều khiển ngắn lại đáng kể. */
+#speed-cluster {
+  display: flex; align-items: stretch;
+  border: 1.5px solid var(--frame-line);
+  border-radius: 4px;
+  overflow: hidden;
+}
+#speed-cluster .ctl-btn, #speed-cluster .speed-btn {
+  border: none;
+  border-radius: 0;
+  border-right: 1px solid rgba(0,0,0,0.35);
+}
+#speed-cluster > :last-child,
+#speed-cluster .speed-btn:last-child { border-right: none; }
+.ctl-btn, .speed-btn {
+  height: 21px; min-width: 19px; padding: 0 3px;
+  display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(180deg, var(--btn-face-hi) 0%, var(--btn-face) 100%);
+  border: 1.5px solid var(--frame-line);
+  border-radius: 4px;
+  color: var(--text-cream); font-size: 11px; font-weight: bold;
+  text-shadow: 1px 1px 0 rgba(0,0,0,0.55);
+  cursor: pointer;
+  transition: filter 0.08s, transform 0.05s;
+}
+.ctl-btn:hover, .speed-btn:hover { filter: brightness(1.18); }
+.ctl-btn:active, .speed-btn:active { transform: translateY(1px); }
+.ctl-btn.danger { background: linear-gradient(180deg, #c4674a 0%, #a34a30 100%); }
+/* Mức tốc độ ĐANG CHẠY tô cam nổi bật (đúng cách ảnh mẫu phân biệt 1x/2x/3x/4x) */
+.speed-btn.active {
+  background: linear-gradient(180deg, #f3ab4d 0%, var(--accent) 100%);
+  color: #3a2208; text-shadow: 1px 1px 0 rgba(255,255,255,0.35);
+  box-shadow: inset 0 0 0 1px rgba(255,240,200,0.7);
+}
+.ctl-btn.active { background: linear-gradient(180deg, #f3ab4d 0%, var(--accent) 100%); color: #3a2208; }
+.ctl-div { width: 2px; align-self: stretch; margin: 2px 1px; background: rgba(0,0,0,0.32); }
+.ctl-btn.ready-pulse { animation: nextWavePulse 1s ease-in-out infinite; }
+@keyframes nextWavePulse {
+  0%, 100% { filter: brightness(1) drop-shadow(0 0 0 rgba(255,220,120,0)); }
+  50%      { filter: brightness(1.35) drop-shadow(0 0 6px rgba(255,220,120,0.9)); }
+}
+
+/* Build menu — rail dọc overlay sát mép trái map, ĐẶT TRONG VÙNG AN TOÀN y=181..429:
+   đó là dải y duy nhất mà ở mép trái (x<130) KHÔNG map nào trong 16 map có đường đi
+   (lối quái vào nằm ở y≈90-150 và y≈460-510). Nhờ vậy rail không che lối spawn/đường
+   đi. Thẻ xếp ngang (icon | giá+bậc) để cả 4 thẻ vừa đúng 248px chiều cao của dải. */
+/* Nền gỗ bọc quanh cả rail (trước đây 4 thẻ trôi rời rạc trực tiếp trên terrain —
+   ở map có bờ biển lởm chởm lấn vào đúng dải x<130/y=184-429 thì rail nhìn như đang
+   "nổi" ngay trên mép nước). Có tấm nền chung giúp rail luôn đứng vững trên 1 khối
+   liền mạch bất kể địa hình phía sau là gì. */
+#build-menu {
+  position: absolute; left: 6px; top: 184px;
+  z-index: 5;
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 5px;
+  background: linear-gradient(180deg, var(--wood-top) 0%, var(--wood-bot) 100%);
+  border: 2px solid var(--frame-line);
+  border-radius: 10px;
+  box-shadow: inset 0 0 0 1px rgba(227,203,154,0.4),
+              0 3px 0 rgba(0,0,0,0.35), 0 5px 12px rgba(0,0,0,0.4);
+}
+.build-btn {
+  width: 84px; padding: 4px 5px;
+  background: linear-gradient(180deg, var(--wood-top) 0%, var(--wood-bot) 100%);
+  border: 2px solid var(--frame-line);
+  border-radius: 7px;
+  box-shadow: inset 0 0 0 1px rgba(227,203,154,0.42);
+  color: var(--text-cream);
+  cursor: pointer;
+  font-size: 14px;
+  display: grid; grid-template-columns: 30px 1fr; align-items: center; gap: 0 5px;
+}
+.build-btn .bicon {
+  grid-row: 1 / span 2;
+  width: 30px; height: 30px; margin: 0;
+  display: block; border-radius: 4px;
+  background-size: cover; background-position: center 20%;
+  image-rendering: pixelated;
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.35);
+}
+.build-btn .bicon.bicon-archer { background-image: url('../assets/buildings/blue_archery.png'); }
+.build-btn .bicon.bicon-barracks { background-image: url('../assets/buildings/blue_barracks.png'); }
+.build-btn .bicon.bicon-mage { background-image: url('../assets/buildings/blue_monastery.png'); }
+.build-btn .bicon.bicon-artillery { background-image: url('../assets/buildings/blue_tower.png'); }
+.build-btn .cost {
+  grid-column: 2; margin: 0;
+  color: #ffdc78; font-weight: bold; font-size: 13px;
+  text-shadow: 1px 1px 1px rgba(0,0,0,0.6);
+  display: flex; align-items: center; justify-content: flex-start; gap: 3px;
+}
+.build-btn .cost .icon-inline { width: 14px; height: 14px; }
+.build-btn .hotkey {
+  position: absolute; top: 0; left: 0;
+  width: 15px; height: 15px; border-radius: 3px;
+  background: rgba(20,14,8,0.8); color: #ffdc78;
+  font-size: 10px; font-weight: bold; line-height: 15px; text-align: center;
+}
+.build-btn { position: relative; }
+.build-btn:hover { filter: brightness(1.12); }
+/* Thẻ đang chọn dùng CAM giống nút tốc độ đang chạy, cho nhất quán ngôn ngữ trạng thái */
+.build-btn.armed {
+  background: linear-gradient(180deg, #f3ab4d 0%, var(--accent) 100%);
+  border-color: #fff0c8; color: #3a2208;
+}
+.build-btn.armed .cost { color: #4a2c08; text-shadow: 1px 1px 0 rgba(255,255,255,0.3); }
+.build-btn.disabled { opacity: 0.45; cursor: not-allowed; filter: grayscale(0.6); }
+
+/* Chấm bậc sức mạnh: 1 chấm = tháp cơ bản/rẻ, 3 chấm = tháp nặng đô/đắt nhất.
+   Màu tăng dần theo bậc để phân biệt được ngay cả khi liếc nhanh. */
+.build-btn .tier { grid-column: 2; display: flex; justify-content: flex-start; gap: 2px; }
+.build-btn .tier i {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: rgba(0,0,0,0.45);
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.5);
+}
+.build-btn[data-tier="1"] .tier i.on { background: #9fe07a; }
+.build-btn[data-tier="2"] .tier i.on { background: #7bdcff; }
+.build-btn[data-tier="3"] .tier i.on { background: #ffb04a; }
+
+/* Tooltip cho thẻ tháp — dùng chung phong cách với tooltip kỹ năng, hiện bên PHẢI
+   thẻ (rail nằm sát mép trái màn hình nên tooltip phải mở ra phía trong). */
+.build-btn[data-tooltip]:hover::after {
+  content: attr(data-tooltip);
+  position: absolute; left: calc(100% + 10px); top: 50%; transform: translateY(-50%);
+  width: max-content; max-width: 190px; padding: 6px 8px;
+  background: #1a120a; color: #f2e6d0; border: 2px solid #6a4a1e;
+  border-radius: 6px; font-size: 11px; line-height: 1.35; text-align: left;
+  white-space: normal; word-break: break-word; overflow-wrap: break-word;
+  text-shadow: none; pointer-events: none; z-index: 20;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.5);
+}
+.build-btn[data-tooltip]:hover::before {
+  content: ''; position: absolute; left: 100%; top: 50%; transform: translateY(-50%);
+  border: 6px solid transparent; border-right-color: #6a4a1e; z-index: 20;
+}
+
+/* Global skills + Hero skills — overlay góc dưới phải, có dải nền gradient bán trong
+   suốt phía sau (đậm ở đáy, tan dần lên trên) để cụm icon không "nổi trần" trực tiếp
+   trên texture cỏ mà vẫn không cắt cứng bản đồ. */
+/* Đẩy cụm kỹ năng xuống sát đáy (đỉnh nút >= y≈524) để nằm dưới mép dưới của đường đi
+   thấp nhất trong 16 map (y≈501 + nửa bề rộng 23 = 524). */
+#skills-panel {
+  position: absolute; right: 6px; bottom: 6px; z-index: 5;
+  display: flex; gap: 3px;
+  padding: 3px 4px;
+  /* Khung gỗ đồng bộ với các cụm còn lại, thay cho kiểu "kính mờ" lệch phong cách */
+  background: linear-gradient(180deg, var(--wood-top) 0%, var(--wood-bot) 100%);
+  border: 2px solid var(--frame-line);
+  border-radius: 8px;
+  box-shadow: inset 0 0 0 1px rgba(227,203,154,0.5),
+              0 2px 0 rgba(0,0,0,0.35), 0 4px 10px rgba(0,0,0,0.35);
+}
+.skill-btn {
+  width: 42px; height: 42px;
+  background: linear-gradient(180deg, var(--btn-face-hi) 0%, var(--btn-face) 100%);
+  border: 2px solid var(--frame-line);
+  border-radius: 6px;
+  position: relative; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22px; color: #fff;
+}
+.skill-icon {
+  width: 30px; height: 30px;
+  image-rendering: pixelated;
+  background-repeat: no-repeat;
+  filter: drop-shadow(0 1px 1px rgba(0,0,0,0.6));
+}
+/* Crop 1 khung hình từ spritesheet animation của pack làm icon tĩnh, thay cho emoji
+   phẳng (pack không có icon riêng cho skill). background-size phải quy đổi để
+   MỖI KHUNG khớp đúng bề rộng .skill-icon (30px) — trước đây tính theo mốc 64px
+   (dành cho 1 box to hơn) trong khi box thực tế chỉ 30px khiến chỉ hiện đúng góc
+   trên-trái của khung hình (cắt mất phần thân/nhân vật, ô "reinforce" bị lệch nhỏ
+   xuống góc, ô "heal" rơi đúng vùng gần như trống của khung → nhìn như thiếu icon). */
+.skill-icon-reinforce { background-image: url('../assets/units/blue_warrior_idle.png'); background-size: 240px 30px; background-position: 0 0; }
+.skill-icon-fire { background-image: url('../assets/particlefx/fire3.png'); background-size: 528px 44px; background-position: -220px 0; }
+.skill-icon-slash { background-image: url('../assets/ui/icon_slash.png'); background-size: 44px 44px; }
+.skill-icon-heal { background-image: url('../assets/units/yellow_monk_heal.png'); background-size: 330px 30px; background-position: -150px 0; }
+/* Icon skill riêng cho 3 hero — mượn khung đầu (frame 0) từ đúng sprite hero đó thay
+   vì vẽ icon mới, cùng cách "crop unit sprite làm icon tĩnh" đã dùng cho reinforce/heal. */
+.skill-icon-volley { background-image: url('../assets/units/blue_archer_shoot.png'); background-size: 240px 30px; background-position: 0 0; }
+.skill-icon-piercing { background-image: url('../assets/ui/icon_sword.png'); background-size: 30px 30px; }
+.skill-icon-battlecry { background-image: url('../assets/units/blue_warrior_attack1.png'); background-size: 120px 30px; background-position: 0 0; }
+.skill-btn .cd-overlay {
+  position: absolute; inset: 0; background: rgba(0,0,0,0.75);
+  border-radius: 5px;
+  clip-path: inset(0 0 0 0);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px; font-weight: bold;
+}
+.skill-btn .key-hint {
+  position: absolute; bottom: -2px; right: 2px; font-size: 11px; font-weight: bold;
+  color: #fff; background: #000; border: 1px solid #ffdc78;
+  padding: 1px 5px; border-radius: 4px;
+  text-shadow: 1px 1px 0 rgba(0,0,0,0.8);
+}
+.skill-btn.pending { outline: 3px solid #7bdcff; }
+.skill-btn.ready:hover { filter: brightness(1.2); }
+/* Tooltip CSS hiện ngay khi hover (thay cho title mặc định của trình duyệt vốn
+   chậm và không đồng bộ phong cách pixel-art gỗ của UI còn lại). */
+/* skills-panel nằm sát mép PHẢI của #app (overflow:hidden) — tooltip căn giữa
+   theo nút (left:50%+translateX(-50%)) sẽ tràn ra ngoài mép phải và bị cắt chữ
+   với 2 nút cuối (Q, E). Neo tooltip theo mép PHẢI của nút thay vì tâm nút để
+   toàn bộ khung luôn nằm trong #app dù nút ở vị trí nào trong panel. */
+.skill-btn[data-tooltip] { position: relative; }
+.skill-btn[data-tooltip]:hover::after {
+  content: attr(data-tooltip);
+  position: absolute; bottom: calc(100% + 8px); right: -6px; left: auto;
+  width: max-content; max-width: 180px; padding: 6px 8px;
+  background: #1a120a; color: #f2e6d0; border: 2px solid #6a4a1e;
+  border-radius: 6px; font-size: 11px; line-height: 1.35; text-align: center;
+  white-space: normal; word-break: break-word; overflow-wrap: break-word;
+  text-shadow: none; pointer-events: none; z-index: 20;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.5);
+}
+.skill-btn[data-tooltip]:hover::before {
+  content: ''; position: absolute; bottom: 100%; right: 15px; left: auto;
+  border: 6px solid transparent; border-top-color: #6a4a1e; margin-bottom: -4px; z-index: 20;
+}
+
+/* Tower action bar — thanh NỔI siêu gọn, thay cho bảng chữ nhật lớn cũ hay che bản
+   đồ. JS (hud.js:renderTowerPanel) đặt left/top = toạ độ world phía trên nóc tháp;
+   transform neo mép ĐÁY-GIỮA của thanh vào đúng điểm đó, có mũi tên nhỏ trỏ xuống
+   tháp cho rõ đang thao tác với tháp nào. Chỉ số chi tiết đã dời sang
+   #tower-hover-bar (dải cố định đáy màn hình) — ở đây chỉ còn 2-3 nút hành động. */
+#tower-panel {
+  position: absolute; z-index: 9;
+  transform: translate(-50%, -100%);
+  display: flex; align-items: center; gap: 4px;
+  padding: 4px;
+  background: linear-gradient(180deg, var(--wood-top) 0%, var(--wood-bot) 100%);
+  border: 2px solid var(--frame-line);
+  border-radius: 18px;
+  box-shadow: inset 0 0 0 1px rgba(227,203,154,0.45), 0 3px 8px rgba(0,0,0,0.4);
+}
+#tower-panel::after {
+  content: ''; position: absolute; left: 50%; bottom: -7px; transform: translateX(-50%);
+  border: 7px solid transparent; border-top-color: var(--frame-line);
+}
+#tower-panel .tp-btn {
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 6px 10px; border-radius: 14px;
+  background: linear-gradient(180deg, var(--btn-face-hi) 0%, var(--btn-face) 100%);
+  border: 1.5px solid var(--frame-line);
+  color: var(--text-cream); text-shadow: 1px 1px 0 rgba(0,0,0,0.5);
+  font-weight: bold; font-size: 12px; white-space: nowrap;
+  cursor: pointer; position: relative;
+}
+#tower-panel .tp-btn.small { padding: 6px 8px; font-size: 11px; }
+#tower-panel .tp-btn:hover:not(:disabled) { filter: brightness(1.15); }
+#tower-panel .tp-btn:active:not(:disabled) { transform: translateY(1px); }
+/* Nút hành động chính (nâng cấp/nhánh A) tô CAM như mọi trạng thái "nổi bật" khác */
+#tower-panel .tp-btn.upgrade, #tower-panel .tp-btn.branch-a {
+  background: linear-gradient(180deg, #f3ab4d 0%, var(--accent) 100%);
+  color: #3a2208; text-shadow: 1px 1px 0 rgba(255,255,255,0.3);
+}
+#tower-panel .tp-btn.branch-b,
+#tower-panel .tp-btn.sell { background: linear-gradient(180deg, #c4674a 0%, #a34a30 100%); }
+#tower-panel .tp-btn:disabled {
+  background: linear-gradient(180deg, #6b6156 0%, #544c43 100%);
+  color: rgba(247,236,210,0.6);
+  cursor: not-allowed; filter: none;
+}
+#tower-panel .tp-btn .icon-inline.coin { width: 12px; height: 12px; }
+#tower-panel .tp-pill {
+  padding: 6px 10px; border-radius: 14px; background: rgba(0,0,0,0.35);
+  font-size: 12px; font-weight: bold; color: var(--text-gold); white-space: nowrap;
+}
+/* Tooltip pixel-art hiện khi hover — cùng phong cách tooltip skill/build-btn */
+#tower-panel .tp-btn[data-tooltip]:hover::after {
+  content: attr(data-tooltip);
+  position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%);
+  width: 170px; padding: 6px 8px;
+  background: #1a120a; color: #f2e6d0; border: 2px solid #6a4a1e;
+  border-radius: 6px; font-size: 11px; line-height: 1.35; text-align: center;
+  /* .tp-btn tự set white-space:nowrap cho nhãn nút (A · 140...) — pseudo-element
+     ::after thừa hưởng luôn thuộc tính này nếu không override, khiến mô tả nhánh
+     dài (label — desc) cố nằm 1 dòng và tràn khỏi màn hình thay vì xuống dòng. */
+  white-space: normal; word-break: break-word; overflow-wrap: break-word;
+  text-shadow: none; pointer-events: none; z-index: 20;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.5);
+}
+#tower-panel .tp-btn[data-tooltip]:hover::before {
+  content: ''; position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%);
+  border: 6px solid transparent; border-top-color: #6a4a1e; margin-bottom: -4px; z-index: 20;
+}
+
+/* Bảng so sánh nhanh 2 nhánh Lv.4 (A/B) — góc dưới trái, chỉ hiện đúng lúc tháp tới
+   mốc chọn nhánh (thanh nổi #tower-panel lúc đó chỉ có 2 nút bé, không đủ chỗ mô tả
+   khác biệt giữa A/B để người chơi cân nhắc trước quyết định KHÔNG ĐỔI LẠI ĐƯỢC). */
+#branch-info-panel {
+  position: absolute; left: 8px; bottom: 8px; z-index: 6;
+  width: 240px;
+  background: linear-gradient(180deg, var(--wood-top) 0%, var(--wood-bot) 100%);
+  border: 3px solid var(--frame-line);
+  border-radius: 10px;
+  box-shadow: inset 0 0 0 2px rgba(227,203,154,0.5),
+              0 3px 0 rgba(0,0,0,0.35), 0 5px 12px rgba(0,0,0,0.35);
+  padding: 8px 9px;
+  color: var(--text-cream);
+  text-shadow: 1px 1px 1px rgba(0,0,0,0.55);
+}
+#branch-info-panel .bip-title {
+  font-size: 10px; font-weight: bold; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--text-gold); text-align: center; margin-bottom: 6px; opacity: 0.9;
+}
+#branch-info-panel .bip-cols { display: flex; gap: 8px; }
+#branch-info-panel .bip-col {
+  flex: 1; min-width: 0;
+  background: rgba(0,0,0,0.22); border-radius: 7px; padding: 6px 7px;
+}
+#branch-info-panel .bip-name { font-size: 12.5px; font-weight: bold; color: #ffe9b0; margin-bottom: 2px; }
+#branch-info-panel .bip-cost { font-size: 11.5px; font-weight: bold; color: var(--text-gold); display: flex; align-items: center; gap: 3px; margin-bottom: 4px; }
+#branch-info-panel .bip-cost .icon-inline.coin { width: 12px; height: 12px; }
+#branch-info-panel .bip-desc { font-size: 10.5px; line-height: 1.35; opacity: 0.9; }
+
+/* Armed cursor banner */
+#armed-banner {
+  position: absolute; top: 62px; left: 50%; transform: translateX(-50%);
+  background: linear-gradient(180deg, #f6ecd2 0%, var(--parchment) 100%);
+  border: 3px solid var(--frame-line);
+  border-radius: 8px;
+  box-shadow: inset 0 0 0 2px rgba(122,85,46,0.3), 0 3px 0 rgba(0,0,0,0.3);
+  padding: 4px 12px;
+  color: var(--ink); font-weight: bold;
+  font-size: 12px; z-index: 7; pointer-events: none;
+}
+
+/* Thanh info khi rê chuột qua tháp (kiểu Kingdom Rush): tên + icon info bên trái,
+   các chỉ số (sát thương/tốc độ/tầm bắn) chia ô bằng vạch dọc bên phải. */
+#tower-hover-bar {
+  position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%);
+  display: flex; align-items: stretch;
+  background: linear-gradient(180deg, var(--wood-top) 0%, var(--wood-bot) 100%);
+  border: 3px solid var(--frame-line); border-radius: 10px;
+  box-shadow: inset 0 0 0 2px rgba(227,203,154,0.45), 0 3px 0 rgba(0,0,0,0.35);
+  font-size: 13px; color: var(--text-cream);
+  z-index: 8; pointer-events: none;
+  overflow: hidden;
+}
+#tower-hover-bar .thb-name {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 16px; font-weight: bold; font-size: 15px;
+  background: rgba(255,255,255,0.05);
+  white-space: nowrap;
+}
+#tower-hover-bar .thb-name .icon-inline {
+  width: 20px; height: 20px;
+  background-image: url('../assets/ui/icon_info.png');
+}
+#tower-hover-bar .thb-stat .icon-inline {
+  width: 14px; height: 14px; margin-right: 3px;
+  background-image: url('../assets/ui/icon_sword.png');
+}
+#tower-hover-bar .thb-val { display: inline-flex; align-items: center; }
+#tower-hover-bar .icon-inline {
+  display: inline-block; background-repeat: no-repeat; background-size: contain;
+  image-rendering: pixelated; vertical-align: middle;
+}
+#tower-hover-bar .thb-stat {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 6px 16px; min-width: 64px;
+  border-left: 2px solid rgba(255,255,255,0.12);
+  white-space: nowrap;
+}
+#tower-hover-bar .thb-stat .thb-val { font-weight: bold; font-size: 14px; color: #ffdc78; }
+#tower-hover-bar .thb-stat .thb-label { font-size: 10px; opacity: 0.75; margin-top: 1px; }
+
+/* Overlays */
+#overlay-pause, #overlay-result {
+  position: absolute; inset: 0; z-index: 20;
+  background: rgba(0,0,0,0.72);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+}
+#overlay-pause h2, #overlay-result h2 {
+  font-size: 30px; margin-bottom: 6px; padding: 10px 34px;
+  border: 20px solid transparent;
+  border-image: url('../assets/ui/banner.png') 68 84 111 100 fill;
+  color: #ffdc78; text-align: center;
+}
+/* Banner nền (banner.png) có vùng chữ nhật TRẮNG/KEM ở giữa (xem border-image 68 84
+   111 100 fill) — chữ vàng nhạt (#ffdc78, màu mặc định của h2 dùng chung với overlay
+   Tạm Dừng) lên nền đó gần như vô hình. Đổi hẳn sang màu ĐẬM tương phản rõ với nền
+   sáng thay vì chỉ đổi sắc, khớp với các nhãn chữ khác đặt trên nền sáng trong game. */
+#overlay-result.win h2 { color: #8a5a12; text-shadow: 1px 1px 0 rgba(255,255,255,0.4); }
+#overlay-result.lose h2 { color: #7a1f1f; text-shadow: 1px 1px 0 rgba(255,255,255,0.4); }
+#overlay-result .stars-big { font-size: 42px; letter-spacing: 8px; color: #ffdc78; margin: 14px 0; }
+#overlay-result .row { display: flex; flex-wrap: wrap; justify-content: center; gap: 14px; margin-top: 18px; max-width: 520px; }
+
+#loading-screen {
+  position: fixed; inset: 0; background: #14161f; z-index: 999;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+}
+/* Thời lượng chuyển màn giả (không có tài nguyên thật để chờ, xem main.js:startLevel)
+   kéo dài hẳn ra (0.7s -> 1.6s) CHỈ ĐỂ kịp thấy nhân vật đi hết thanh load — thời gian
+   này phải khớp CHÍNH XÁC với setTimeout tương ứng bên main.js, đổi 1 bên mà quên bên
+   kia là thanh chạy xong nhưng màn chưa chuyển (hoặc ngược lại, chuyển màn trước khi
+   chạy hết thanh, cụt hình). */
+#loading-bar-inner.auto-fill { animation: loadingAutoFill 1.6s ease-out forwards; }
+@keyframes loadingAutoFill { from { width: 0%; } to { width: 100%; } }
+#loading-bar-wrap { position: relative; margin-top: 14px; }
+/* Lỗi cũ (có sẵn từ trước, không liên quan tính năng lính chạy): border-image-slice
+   là "0 24 0 24" (trên/dưới = 0, trái/phải = 24 — khung chỉ bo tròn 2 đầu viên
+   thuốc, KHÔNG có viền trên/dưới), nhưng border-width lại đặt ĐỀU 16px cả 4 cạnh.
+   Với box-sizing: border-box (global), border 16px trên VÀ dưới ăn hết sạch 32px
+   chiều cao khai báo -> phần CONTENT (nơi #loading-bar-inner với height:100% cắm
+   vào) còn đúng 0px -> thanh fill vô hình từ trước tới giờ. Border-width phải khớp
+   đúng pattern slice: chỉ dày trái/phải, top/bottom = 0. */
+#loading-bar-outer {
+  width: 280px; height: 32px;
+  border-style: solid; border-color: transparent; border-width: 0 16px;
+  border-image: url('../assets/ui/bar_base.png') 0 24 0 24 fill;
+  overflow: hidden;
+}
+#loading-bar-inner {
+  height: 100%; width: 0%;
+  background-image: url('../assets/ui/bar_fill.png');
+  background-size: 20px 100%;
+  background-repeat: repeat-x;
+  transition: width 0.15s;
+}
+/* Lính chạy dọc theo thanh load — đặt NGOÀI #loading-bar-outer (thanh có
+   overflow:hidden để cắt hoạ tiết fill) để không bị cắt ngang chân/đầu. Vị trí
+   ngang (--char-x, 0..1) do JS set trực tiếp qua style.left mỗi lần % tải đổi
+   (boot() dùng ratio thật; startLevel dùng animation CSS riêng bên dưới nên
+   không cần JS đặt lại mỗi frame). */
+#loading-char {
+  position: absolute; left: 0; bottom: 100%;
+  width: 30px; height: 30px; margin-bottom: -4px;
+  background-image: url('../assets/units/blue_warrior_run.png');
+  background-repeat: no-repeat;
+  background-size: 180px 30px; /* 6 khung x 30px */
+  image-rendering: pixelated;
+  transition: left 0.15s linear;
+  animation: loadingCharRun 0.5s steps(6) infinite;
+}
+#loading-bar-wrap.auto-walk #loading-char {
+  transition: none;
+  animation: loadingCharRun 0.5s steps(6) infinite, loadingCharWalk 1.6s ease-out forwards;
+}
+@keyframes loadingCharRun { from { background-position-x: 0; } to { background-position-x: -180px; } }
+@keyframes loadingCharWalk { from { left: 0; } to { left: calc(100% - 30px); } }
+
+.gold-flash { animation: goldFlash 0.3s; }
+@keyframes goldFlash { 0% { color: #5cff8a; } 100% { color: inherit; } }

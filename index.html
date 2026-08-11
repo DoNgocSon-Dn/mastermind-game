@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Thủ Thành — Tower Defense Pixel</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<!--
+  #stage = khung phủ kín cửa sổ, chỉ canh giữa #app (không chia dải, không chiếm chỗ).
+  #app = hệ toạ độ LOGIC 960x600 (canvas + toàn bộ HUD overlay bên trong), được `zoom`
+  phóng lấp đầy cửa sổ thực tế (main.js:fitGameScale).
+  HUD đặt absolute theo góc của #app; vì #app trải kín màn hình nên neo góc #app
+  chính là neo góc màn hình, mà KHÔNG chiếm chỗ layout làm map co lại.
+-->
+<div id="stage">
+
+<div id="app">
+
+  <!-- Main Menu -->
+  <div id="screen-menu" class="screen hidden">
+    <div class="cloud-layer">
+      <div class="cloud cloud-1"></div>
+      <div class="cloud cloud-2"></div>
+      <div class="cloud cloud-3"></div>
+      <div class="cloud cloud-4"></div>
+    </div>
+    <!-- Dải diễu hành trang trí — 3 hero ĐỨNG YÊN tại chỗ (chỉ chạy animation bước
+         chân), 2 lớp cây phía sau mới là thứ CUỘN NGANG liên tục -> ảo giác cả nhóm
+         đang băng qua rừng (kiểu "treadmill" side-scroller). Tái dùng nguyên asset đã
+         tải sẵn cho map/hero-select nên không tốn thêm tài nguyên tải. Neo TRỌN đáy
+         màn, KHÔNG che cụm nút giữa màn. -->
+    <div class="hero-parade">
+      <div class="parade-ground"></div>
+      <div class="parade-trees parade-trees-back"></div>
+      <div class="parade-trees parade-trees-front"></div>
+      <div class="parade-heroes">
+        <div class="parade-hero parade-hero-archer"></div>
+        <div class="parade-hero parade-hero-spear"></div>
+        <div class="parade-hero parade-hero-tank"></div>
+      </div>
+    </div>
+    <h1>MasterMind</h1>
+    <div class="subtitle">Tower Defense Pixel 2D</div>
+    <button class="menu-btn" id="btn-play">▶ Chơi</button>
+    <button class="menu-btn secondary" id="btn-settings"><span class="icon-inline gear"></span> Cài đặt</button>
+    <div id="settings-panel" class="hidden">
+      <label><input type="checkbox" id="chk-mute"> Tắt âm thanh</label>
+      <label><span class="icon-inline music"></span> Âm lượng <input type="range" id="rng-volume" min="0" max="1" step="0.05" value="0.6"></label>
+      <label><input type="checkbox" id="chk-mute-music"> Tắt nhạc nền</label>
+      <label><span class="icon-inline music"></span> Nhạc nền <input type="range" id="rng-music-volume" min="0" max="1" step="0.05" value="0.35"></label>
+      <!-- Ẩn mặc định — chỉ hiện sau khi gõ "@@@" (xem menu.js), tránh người chơi
+           thường vô tình bấm trúng cheat vàng vô hạn + mở hết map. -->
+      <div id="dev-mode-row" class="hidden">
+        <label><input type="checkbox" id="chk-devmode"> 🔓 Dev Mode (vàng vô hạn + mở hết map)</label>
+      </div>
+      <button class="menu-btn secondary btn-compact" id="btn-settings-close">Đóng</button>
+    </div>
+  </div>
+
+  <!-- Level Select -->
+  <div id="screen-levelselect" class="screen hidden">
+    <div class="cloud-layer">
+      <div class="cloud cloud-1"></div>
+      <div class="cloud cloud-2"></div>
+      <div class="cloud cloud-3"></div>
+      <div class="cloud cloud-4"></div>
+    </div>
+    <div class="ground-decor ground-decor-right">
+      <div class="gd-item gd-tree"></div>
+      <div class="gd-item gd-rock"></div>
+    </div>
+    <button class="menu-btn secondary btn-compact" id="back-to-menu">← Menu</button>
+    <h2>Chọn Màn Chơi</h2>
+    <div id="level-list"></div>
+  </div>
+
+  <!-- Hero Select — hiện sau khi chọn map, trước khi vào trận -->
+  <div id="screen-heroselect" class="screen hidden">
+    <div class="cloud-layer">
+      <div class="cloud cloud-1"></div>
+      <div class="cloud cloud-2"></div>
+      <div class="cloud cloud-3"></div>
+      <div class="cloud cloud-4"></div>
+    </div>
+    <button class="menu-btn secondary btn-compact" id="back-to-levelselect">← Chọn Màn</button>
+    <h2>Chọn Tướng</h2>
+    <div id="hero-list"></div>
+  </div>
+
+  <!-- Game — chỉ còn canvas + các lớp BẮT BUỘC phải nằm đúng hệ toạ độ map
+       (panel tháp theo ngữ cảnh, banner đang-đặt-tháp, overlay pause/kết quả). -->
+  <div id="game-container" class="hidden">
+    <canvas id="gameCanvas" width="960" height="600"></canvas>
+
+    <!-- Toàn bộ HUD là lớp OVERLAY tuyệt đối đè lên canvas (position:absolute, neo
+         theo góc), KHÔNG phải phần tử anh em chiếm chỗ layout — nếu xếp sibling thì
+         map bị đẩy co lại đúng bằng chỗ UI chiếm (lỗi của bản trước). -->
+    <!-- Dải tài nguyên góc trên trái: icon + nhãn vàng in hoa + số trắng, ngăn nhau
+         bằng vạch dọc mảnh — theo đúng bố cục dải Gỗ/Vàng/Thịt/Dân số của ảnh mẫu. -->
+    <div id="hud-top" class="ui-frame">
+      <div class="res">
+        <span class="res-ico coin"></span>
+        <span class="res-txt"><span class="res-label">VÀNG</span><span class="res-val" id="hud-gold">0</span></span>
+      </div>
+      <span class="res-div"></span>
+      <div class="res">
+        <span class="res-ico heart">❤</span>
+        <span class="res-txt"><span class="res-label">MẠNG</span><span class="res-val" id="hud-lives">0</span></span>
+      </div>
+      <span class="res-div"></span>
+      <div class="res">
+        <span class="res-ico wave">🌊</span>
+        <span class="res-txt"><span class="res-label">ĐỢT</span><span class="res-val" id="hud-wave">0/0</span></span>
+      </div>
+    </div>
+
+    <!-- Banner giữa trên: tên màn (nhãn nhỏ) + trạng thái hiện tại (chữ lớn) + dòng
+         phụ đếm quái còn lại — tách khỏi dải tài nguyên như ảnh mẫu. -->
+    <div id="hud-banner" class="ui-frame">
+      <div class="banner-sub" id="hud-map-name">—</div>
+      <div class="banner-main" id="hud-status">Chuẩn bị</div>
+      <div class="banner-note" id="hud-enemies">Địch còn lại: 0</div>
+    </div>
+
+    <div id="hud-controls" class="ui-frame">
+      <div class="ctl-btn" id="btn-pause" title="Tạm dừng">⏸</div>
+      <span class="ctl-div"></span>
+      <div id="speed-cluster">
+        <div id="speed-group"></div>
+        <div class="ctl-btn seg" id="btn-spawn-mode" title="Chế độ ra quân: Rải theo nhịp — bấm để đổi">⏩</div>
+      </div>
+      <span class="ctl-div"></span>
+      <div class="ctl-btn danger" id="btn-menu-exit" title="Về Menu">✕</div>
+    </div>
+
+    <div id="build-menu"></div>
+
+    <div id="skills-panel"></div>
+
+    <div id="tower-hover-bar" class="hidden"></div>
+
+    <div id="tower-panel" class="hidden"></div>
+
+    <!-- Bảng so sánh nhanh 2 nhánh Lv.4 (A/B) — chỉ hiện đúng lúc tháp tới mốc chọn
+         nhánh, vì thanh nổi #tower-panel lúc đó chỉ có 2 nút bé tí không đủ chỗ mô tả. -->
+    <div id="branch-info-panel" class="hidden"></div>
+
+    <div id="armed-banner" class="hidden"></div>
+
+    <div id="overlay-pause" class="hidden">
+      <h2>⏸ TẠM DỪNG</h2>
+      <button class="menu-btn" id="btn-resume">Tiếp tục</button>
+      <button class="menu-btn secondary" id="btn-restart">Chơi lại màn này</button>
+      <button class="menu-btn secondary" id="btn-quit">Về Menu</button>
+    </div>
+
+    <div id="overlay-result" class="hidden">
+      <h2 id="result-title">CHIẾN THẮNG</h2>
+      <div class="stars-big" id="result-stars">★★★</div>
+      <p id="result-desc"></p>
+      <div class="row">
+        <button class="menu-btn" id="btn-result-next">Màn tiếp theo</button>
+        <button class="menu-btn secondary" id="btn-result-retry">Chơi lại</button>
+        <button class="menu-btn secondary" id="btn-result-menu">Về Level Select</button>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /#app -->
+
+</div><!-- /#stage -->
+
+<!-- Loading: NẰM NGOÀI #stage/#app cố tình — #app là hộp logic 960x600 bị zoom
+     rồi #stage canh giữa (letterbox khi tỉ lệ cửa sổ lệch 16:10), nên đặt loading
+     bên trong đó sẽ không phủ hết màn hình, lộ viền màu biển 2 bên. Đặt ở đây,
+     position:fixed phủ thẳng lên toàn bộ viewport, không phụ thuộc --game-scale. -->
+<div id="loading-screen">
+  <h2>MASTERMIND</h2>
+  <div id="loading-bar-wrap">
+    <div id="loading-char"></div>
+    <div id="loading-bar-outer"><div id="loading-bar-inner"></div></div>
+  </div>
+  <p id="loading-text">Đang tải tài nguyên...</p>
+</div>
+
+<script src="js/config.js"></script>
+<script src="js/assets.js"></script>
+<script src="js/util/spritefx.js"></script>
+<script src="js/systems/devmode.js"></script>
+<script src="js/systems/damage.js"></script>
+<script src="js/systems/economy.js"></script>
+<script src="js/systems/wave.js"></script>
+<script src="js/systems/skills.js"></script>
+<script src="js/systems/save.js"></script>
+<script src="js/entities/projectile.js"></script>
+<script src="js/entities/enemy.js"></script>
+<script src="js/entities/soldier.js"></script>
+<script src="js/entities/tower.js"></script>
+<script src="js/entities/hero.js"></script>
+<script src="js/map.js"></script>
+<script src="js/ui/damageText.js"></script>
+<script src="js/ui/menu.js"></script>
+<script src="js/ui/heroselect.js"></script>
+<script src="js/ui/hud.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
