@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Thủ Thành — Tower Defense Pixel</title>
-<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/style.css?v=8">
 </head>
 <body>
 <!--
@@ -26,15 +26,20 @@
       <div class="cloud cloud-3"></div>
       <div class="cloud cloud-4"></div>
     </div>
-    <!-- Dải diễu hành trang trí — 3 hero ĐỨNG YÊN tại chỗ (chỉ chạy animation bước
-         chân), 2 lớp cây phía sau mới là thứ CUỘN NGANG liên tục -> ảo giác cả nhóm
-         đang băng qua rừng (kiểu "treadmill" side-scroller). Tái dùng nguyên asset đã
-         tải sẵn cho map/hero-select nên không tốn thêm tài nguyên tải. Neo TRỌN đáy
-         màn, KHÔNG che cụm nút giữa màn. -->
+    <!-- Dải diễu hành Menu chính — 3 hero diễu hành chân chạm đúng đường đất -->
     <div class="hero-parade">
-      <div class="parade-ground"></div>
-      <div class="parade-trees parade-trees-back"></div>
-      <div class="parade-trees parade-trees-front"></div>
+      <div class="parade-ground-path"></div>
+      <div class="parade-trees"></div>
+
+      <!-- Đá, cừu, bụi cây cuộn lướt qua trên đường -->
+      <div class="parade-decor-scroll">
+        <div class="decor-item decor-rock1"></div>
+        <div class="decor-item decor-sheep"></div>
+        <div class="decor-item decor-rock2"></div>
+        <div class="decor-item decor-bush"></div>
+      </div>
+
+      <!-- Đội hình 3 Hero chính (Cung thủ, Lính giáo, Khiên) chân chạm đất, căn giữa hoàn hảo -->
       <div class="parade-heroes">
         <div class="parade-hero parade-hero-archer"></div>
         <div class="parade-hero parade-hero-spear"></div>

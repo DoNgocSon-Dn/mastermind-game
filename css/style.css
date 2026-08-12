@@ -89,9 +89,6 @@ body { display: block; }
    layout, khiến toạ độ căn giữa tính theo kích thước CHƯA phóng to).
    Vì HUD nằm TRONG #app nên zoom phóng cả map lẫn HUD cùng lúc → hệ toạ độ logic
    960x600 giờ trải kín màn hình, tức neo HUD ở góc 960x600 chính là neo ở góc màn hình. */
-/* KHÔNG viền/bo góc quanh #app khi đang chơi: mép canvas vốn đã là nước, nối thẳng
-   ra biển của #stage nên phải để trơn thì mới liền mạch (viền gỗ cũ tạo ra đúng cái
-   "khung đen cắt ngang biển" cần loại bỏ). Menu/level-select vẫn có khung riêng. */
 #app {
   position: relative;
   flex: 0 0 auto;
@@ -106,8 +103,7 @@ body { display: block; }
   position: absolute; inset: 0;
   z-index: 0;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
-  /* Tông ấm hơn (ngả nâu ở rìa) để khớp với bảng màu gỗ --wood-top/--frame-line dùng
-     xuyên suốt HUD trong trận, thay vì gradient xanh lạnh đứng riêng 1 phong cách. */
+  /* Tông màu nền rừng đêm mượt mà */
   background: radial-gradient(120% 90% at 50% -8%, #33503c 0%, #223a2a 55%, #17251c 100%);
   overflow: hidden;
 }
@@ -122,7 +118,7 @@ body { display: block; }
   pointer-events: none;
 }
 .cloud {
-  position: absolute; left: -320px;
+  position: absolute; left: 100%;
   background-repeat: no-repeat; background-size: contain; background-position: center;
   animation-name: cloudDrift; animation-timing-function: linear; animation-iteration-count: infinite;
 }
@@ -131,11 +127,10 @@ body { display: block; }
 .cloud-3 { top: 11%; width: 230px; height: 102px; background-image: url('../assets/decorations/cloud_a1.png'); animation-duration: 37s; animation-delay: -18s; --cloud-opacity: 0.7; }
 .cloud-4 { top: 33%; width: 160px; height: 70px;  background-image: url('../assets/decorations/cloud_b1.png'); animation-duration: 70s; animation-delay: -50s; --cloud-opacity: 0.6; }
 @keyframes cloudDrift {
-  0%   { transform: translateX(0); opacity: 0; }
+  0%   { transform: translateX(0px); opacity: 0; }
   6%   { opacity: var(--cloud-opacity, 1); }
-  50%  { transform: translateX(620px); }
   94%  { opacity: var(--cloud-opacity, 1); }
-  100% { transform: translateX(1240px); opacity: 0; }
+  100% { transform: translateX(-1280px); opacity: 0; }
 }
 .hidden { display: none !important; }
 
@@ -197,94 +192,134 @@ body { display: block; }
 
 @keyframes gdSheepIdle { from { background-position-x: 0%; } to { background-position-x: 100%; } }
 
-/* Dải diễu hành Menu chính (thay .ground-decor cũ CHỈ ở Menu — level-select vẫn giữ
-   nguyên .ground-decor-right, không đụng tới). 3 hero ĐỨNG YÊN tại chỗ, chỉ chạy
-   animation bước chân qua từng khung; 2 lớp CÂY phía sau mới là thứ di chuyển ->
-   ảo giác cả nhóm đang băng qua rừng, rẻ hơn nhiều so với thực sự trượt 3 sprite
-   ngang màn hình. z-index:-1 + pointer-events:none nên không bao giờ che/chặn cụm
-   nút hay panel cài đặt (bottom:16px) — panel mở chỉ đơn giản đè lên trên. */
+/* Dải diễu hành Menu chính — 3 hero diễu hành xuyên suốt 4 Mùa (Xuân, Hạ, Thu, Đông) */
 .hero-parade {
-  position: absolute; left: 0; right: 0; bottom: 0; height: 88px;
-  z-index: -1; overflow: hidden; pointer-events: none;
+  position: absolute; left: 0; right: 0; bottom: 0; height: 86px;
+  z-index: 1; overflow: hidden; pointer-events: none;
 }
-/* Cuộn vô hạn liền mạch CHỈ bằng background-position % (không lặp DOM): với
-   background-size width = 50% (tile đúng nửa khung chứa), dịch position 0% -> -100%
-   luôn bằng ĐÚNG 1 lần bề rộng tile (offset = (container-tile)*pct, tile=50% nên
-   0%..-100% = -1 tile khít biên) — % tính lại theo kích thước ĐÃ zoom nên không giật
-   dù zoom bao nhiêu, khác lỗi px+zoom đã ghi ở .gd-tree. Cây CỐ Ý thấp hơn hẳn hero
-   (xem .parade-hero) — cây là NỀN phía sau, hero mới là tiền cảnh, đầu hero phải
-   nhô rõ lên trên tán cây thì mới đọc được là "hero đi trước, rừng lướt qua sau".*/
+
+/* Nền đường đất — tự động chuyển tông màu theo 4 Mùa */
+.parade-ground-path {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 16px;
+  background: #3e2b1b;
+  border-top: 2px solid #5a4027;
+  z-index: 2;
+  animation: seasonGround 32s ease-in-out infinite;
+}
+
+/* Cây chạy nền — cuộn ngang & chuyển sắc màu theo 4 Mùa (Anh Đào Xuân -> Xanh Hạ -> Lá Cam Thu -> Tuyết Đông) */
 .parade-trees {
-  position: absolute; left: 0; bottom: 0; width: 100%;
-  background-repeat: repeat-x; background-size: 50% 100%;
-  animation: paradeTreeScroll linear infinite;
-}
-.parade-trees-back {
-  height: 34px; opacity: 0.45;
-  background-image: url('../assets/decorations/tree2.png');
-  animation-duration: 24s;
-}
-.parade-trees-front {
-  height: 48px; opacity: 0.85;
+  position: absolute; left: 0; bottom: 14px; width: 100%; height: 52px;
   background-image: url('../assets/decorations/tree1.png');
-  animation-duration: 12s;
+  background-repeat: repeat-x; background-size: 320px 100%;
+  animation: paradeTreeScroll 14s linear infinite, seasonTrees 32s ease-in-out infinite;
+  z-index: 3; opacity: 0.95;
 }
-@keyframes paradeTreeScroll { from { background-position-x: 0%; } to { background-position-x: -100%; } }
-
-/* Nền đất — vá khoảng trống ĐEN lộ ra giữa các gốc cây (ảnh cây rời rạc theo tile,
-   khe hở giữa 2 cây liền kề không có gì che), khiến cây/hero như đang lửng lơ giữa
-   không trung thay vì đứng trên mặt đất. Đặt DƯỚI CÙNG (con đầu tiên trong DOM) để
-   cây/hero vẽ đè lên trên đúng chỗ có thân, còn khe hở thì lộ màu đất bên dưới ra.
-   Tông màu tái dùng ĐÚNG bảng path/pathEdge của theme "forest" trong map.js (#b08c5a/
-   #6e5230) cho khớp palette đất rừng dùng trong map thật, không bịa màu mới. */
-.parade-ground {
-  position: absolute; left: 0; right: 0; bottom: 0; height: 26px;
-  background: linear-gradient(180deg, #2e4a2a 0%, #4a3820 45%, #6e5230 100%);
+@keyframes paradeTreeScroll {
+  from { background-position-x: 0px; }
+  to   { background-position-x: -320px; }
 }
 
-/* 3 hero xếp giữa dải, chỉ chạy animation bước chân (kỹ thuật % qua từng khung rời
-   rạc giống .gd-tree — an toàn với zoom của #app). Cung Thủ + Giáo mượn tạm bản màu
-   TÍM của pack rồi nhuộm xanh dương bằng filter — ĐÚNG filter hero.js dùng khi vẽ
-   Hero Giáo trong trận (xem hero.js _drawSprite: hue-rotate 200deg + saturate 1.3 +
-   brightness 1.05) để khớp tông phe người chơi như thẻ tướng ở màn chọn tướng.
-   bottom:0 = mốc "mặt đất" thật (khớp đáy .parade-ground/.parade-trees, cùng bottom:0
-   trong .hero-parade) — KHÔNG dùng bottom:2px như trước, vì đó chỉ là số chỉnh tay
-   theo mép NGOÀI khung ảnh, không phải theo chân nhân vật thật trong khung. */
+/* Chu kỳ 4 Mùa chuyển sắc huyền ảo (Spring -> Summer -> Autumn -> Winter) */
+@keyframes seasonTrees {
+  /* 🌸 Mùa Xuân (0% - 20%): Rừng Hoa Anh Đào hồng thắm */
+  0%, 20% {
+    filter: hue-rotate(-45deg) saturate(1.35) brightness(1.1);
+  }
+  /* ☀️ Mùa Hạ (25% - 45%): Rừng Xanh rực rỡ tươi mát */
+  25%, 45% {
+    filter: hue-rotate(0deg) saturate(1.15) brightness(1);
+  }
+  /* 🍂 Mùa Thu (50% - 70%): Rừng Lá Vàng/Cam cháy lãng mạn */
+  50%, 70% {
+    filter: hue-rotate(-80deg) saturate(1.75) brightness(1.08);
+  }
+  /* ❄️ Mùa Đông (75% - 95%): Rừng Tuyết Phủ trắng băng giá */
+  75%, 95% {
+    filter: hue-rotate(135deg) saturate(0.35) brightness(1.4) contrast(1.1);
+  }
+  100% {
+    filter: hue-rotate(-45deg) saturate(1.35) brightness(1.1);
+  }
+}
+
+@keyframes seasonGround {
+  0%, 20%  { background: #3d2d1e; border-top-color: #5d8e48; } /* Xuân */
+  25%, 45% { background: #3e2b1b; border-top-color: #486e38; } /* Hạ */
+  50%, 70% { background: #4a2d18; border-top-color: #9c6028; } /* Thu */
+  75%, 95% { background: #3a4750; border-top-color: #a5b9c6; } /* Đông */
+  100%     { background: #3d2d1e; border-top-color: #5d8e48; } /* Xuân */
+}
+
+/* Vật thể di chuyển cuộn ngang qua các hero (Đá, Cừu, Bụi cây) sát mặt đường */
+.parade-decor-scroll {
+  position: absolute; inset: 0; z-index: 4; pointer-events: none; overflow: hidden;
+}
+.decor-item {
+  position: absolute; bottom: 10px; left: 100%;
+  image-rendering: pixelated;
+  animation: decorScroll 24s linear infinite, seasonTrees 32s ease-in-out infinite;
+}
+.decor-rock1 {
+  width: 32px; height: 32px;
+  background-image: url('../assets/decorations/rock1.png');
+  background-size: contain; background-repeat: no-repeat;
+  animation-delay: 0s, 0s; bottom: 12px;
+}
+.decor-sheep {
+  width: 44px; height: 44px;
+  background-image: url('../assets/decorations/sheep_bouncing.png');
+  background-size: 600% 100%;
+  animation: decorScroll 24s linear infinite, gdSheepIdle 1.2s steps(5) infinite;
+  animation-delay: -6s, 0s;
+  bottom: -2px; /* Hạ vị trí chân cừu chuẩn mốc */
+}
+.decor-rock2 {
+  width: 32px; height: 32px;
+  background-image: url('../assets/decorations/rock2.png');
+  background-size: contain; background-repeat: no-repeat;
+  animation-delay: -12s, 0s; bottom: 12px;
+}
+.decor-bush {
+  width: 36px; height: 28px;
+  background-image: url('../assets/decorations/bush1.png');
+  background-size: contain; background-repeat: no-repeat;
+  animation-delay: -18s, 0s; bottom: 14px;
+}
+@keyframes decorScroll {
+  0%   { transform: translateX(0px); }
+  100% { transform: translateX(-1080px); }
+}
+
+/* Đội hình 3 Hero diễu hành căn giữa tuyệt đối — chân nâng cao lên 1 xíu đứng chuẩn mốc đường */
 .parade-heroes {
-  position: absolute; left: 50%; bottom: 0; transform: translateX(-50%);
-  display: flex; align-items: flex-end; gap: 12px;
+  position: absolute; left: 50%; bottom: 4px; transform: translateX(-50%);
+  z-index: 5; display: flex; align-items: flex-end; gap: 24px;
 }
 .parade-hero { width: 58px; height: 58px; background-repeat: no-repeat; image-rendering: pixelated; }
-/* Mỗi khung nguồn (background-size Y:100%, không crop dọc) chừa 1 khoảng trong suốt
-   khác nhau dưới chân tuỳ sprite — đo thật bằng cách quét kênh alpha khung chạy đầu
-   tiên của từng ảnh (cùng kỹ thuật botN trong hero.js/enemy.js), rồi kéo cả khung
-   xuống đúng bằng khoảng trống đó (margin-bottom ÂM) để chân THẬT chạm mốc bottom:0,
-   không phải mép ngoài khung ảnh. Trước đây cả 3 hero neo theo mép khung nên đều lơ
-   lửng cách mặt đất ~19-24px, LẠI KHÔNG ĐỀU NHAU giữa 3 hero (Giáo lệch hẳn 5px so
-   với Cung Thủ/Khiên do khung lancer cao hơn) — nhìn như dán nổi trên nền cây, giả.
-   archer/purple_archer_run: botN .703 -> 58*(1-.703)=17px. spear/purple_lancer_run:
-   botN .616 (khung 320 cao hơn hẳn 192 nên đáy khung xa chân hơn) -> 22px.
-   tank/blue_warrior_run: botN .708 -> 17px. */
+
 .parade-hero-archer {
   background-image: url('../assets/units/purple_archer_run.png');
-  background-size: 400% 100%; /* 4 khung */
+  background-size: 400% 100%;
   filter: hue-rotate(200deg) saturate(1.3) brightness(1.05);
   animation: paradeRunFrames 0.7s steps(3) infinite;
   margin-bottom: -17px;
 }
 .parade-hero-spear {
   background-image: url('../assets/units/purple_lancer_run.png');
-  background-size: 600% 100%; /* 6 khung */
+  background-size: 600% 100%;
   filter: hue-rotate(200deg) saturate(1.3) brightness(1.05);
   animation: paradeRunFrames 0.5s steps(5) infinite;
-  animation-delay: -0.15s;
-  margin-bottom: -22px;
+  animation-delay: -0.12s;
+  transform: scale(1.35);
+  transform-origin: bottom center;
+  margin-bottom: -35px; /* Hạ chân Lính giáo đúng mốc đất chuẩn */
 }
 .parade-hero-tank {
   background-image: url('../assets/units/blue_warrior_run.png');
-  background-size: 600% 100%; /* 6 khung */
+  background-size: 600% 100%;
   animation: paradeRunFrames 0.5s steps(5) infinite;
-  animation-delay: -0.3s;
+  animation-delay: -0.25s;
   margin-bottom: -17px;
 }
 @keyframes paradeRunFrames { from { background-position-x: 0%; } to { background-position-x: 100%; } }
