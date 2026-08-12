@@ -29,25 +29,57 @@ function distToSegment(px, py, a, b) {
 // tới 24px so với waypoint gốc, đẩy đường đi lấn vào sát mép trên của map (chỗ HUD
 // đứng) dù toạ độ thiết kế vốn nằm an toàn ở y=90. Centripetal Catmull-Rom bám sát
 // waypoint, không tự cắt, nên đường đi nằm gọn trong hành lang đã thiết kế.
-function smoothPath(points, samplesPerSegment = 14) {
+// Đường đi Pixel Art góc vuông (Grid-aligned Pixel Path): giữ các đoạn thẳng strictly
+// vuông góc / thẳng hàng với lưới ô 64px của Tiny Swords, góc rẽ bo gọn nhẹ 10-14px
+// để quái và hero di chuyển mượt mà chuẩn Pixel Art TD cổ điển.
+function smoothPath(points, samplesPerSegment = 8) {
   const n = points.length;
-  if (n < 3) return points.slice();
-  const get = (i) => points[Math.max(0, Math.min(n - 1, i))];
-  const EPS = 1e-6;
-  const knot = (ti, a, b) => ti + Math.max(EPS, Math.pow(Math.hypot(b.x - a.x, b.y - a.y), 0.5));
-  const out = [points[0]];
+  if (n < 2) return points.slice();
+  const out = [{ x: points[0].x, y: points[0].y }];
+  const CORNER_R = 12; // Bán kính bo góc vuông nhẹ (12px) cho di chuyển mượt
+
   for (let i = 0; i < n - 1; i++) {
-    const p0 = get(i - 1), p1 = get(i), p2 = get(i + 1), p3 = get(i + 2);
-    const t0 = 0, t1 = knot(t0, p0, p1), t2 = knot(t1, p1, p2), t3 = knot(t2, p2, p3);
+    const p1 = points[i];
+    const p2 = points[i + 1];
+
+    if (i < n - 2) {
+      const p3 = points[i + 2];
+      const d1x = p2.x - p1.x, d1y = p2.y - p1.y;
+      const len1 = Math.hypot(d1x, d1y);
+      const d2x = p3.x - p2.x, d2y = p3.y - p2.y;
+      const len2 = Math.hypot(d2x, d2y);
+
+      const r = Math.min(CORNER_R, len1 / 2, len2 / 2);
+      if (r > 2 && len1 > 0 && len2 > 0) {
+        const stopX = p2.x - (d1x / len1) * r;
+        const stopY = p2.y - (d1y / len1) * r;
+        const startNextX = p2.x + (d2x / len2) * r;
+        const startNextY = p2.y + (d2y / len2) * r;
+
+        const startPt = out[out.length - 1];
+        for (let s = 1; s <= samplesPerSegment; s++) {
+          const t = s / samplesPerSegment;
+          out.push({ x: startPt.x + (stopX - startPt.x) * t, y: startPt.y + (stopY - startPt.y) * t });
+        }
+
+        for (let s = 1; s <= 4; s++) {
+          const t = s / 4;
+          const invT = 1 - t;
+          const qx = invT * invT * stopX + 2 * invT * t * p2.x + t * t * startNextX;
+          const qy = invT * invT * stopY + 2 * invT * t * p2.y + t * t * startNextY;
+          out.push({ x: qx, y: qy });
+        }
+        continue;
+      }
+    }
+
+    const startPt = out[out.length - 1];
     for (let s = 1; s <= samplesPerSegment; s++) {
-      const t = t1 + (t2 - t1) * (s / samplesPerSegment);
-      const lerp = (a, b, ta, tb) => {
-        const w = (tb - t) / (tb - ta), v = (t - ta) / (tb - ta);
-        return { x: w * a.x + v * b.x, y: w * a.y + v * b.y };
-      };
-      const A1 = lerp(p0, p1, t0, t1), A2 = lerp(p1, p2, t1, t2), A3 = lerp(p2, p3, t2, t3);
-      const B1 = lerp(A1, A2, t0, t2), B2 = lerp(A2, A3, t1, t3);
-      out.push(lerp(B1, B2, t1, t2));
+      const t = s / samplesPerSegment;
+      out.push({
+        x: startPt.x + (p2.x - startPt.x) * t,
+        y: startPt.y + (p2.y - startPt.y) * t,
+      });
     }
   }
   return out;
@@ -70,74 +102,32 @@ function mulberry32(seed) {
 // xem GameMap.isBuildable(). pathLength/pointAtArc/generateBuildSpots chỉ phục vụ
 // cơ chế cũ nên đã gỡ bỏ luôn cho gọn.)
 
-// ---------------- Hình dạng đảo (mặt nạ ô 64px) ----------------
-// Khung ngoài của đảo, cố định cho mọi map (canvas luôn 960x600).
-const ISLAND_RECT = { x: 32, y: 12, w: 896, h: 576 };
+// ---------------- Hình dạng map đất (khung tràn 960x600) ----------------
+// Khung toàn bộ màn hình cho mọi map (canvas 960x600), toàn bộ là mặt đất tràn màn hình.
+const ISLAND_RECT = { x: 0, y: 0, w: 960, h: 600 };
 
-// Sinh mặt nạ đất/nước: bắt đầu từ hình chữ nhật rồi "gặm" ngẫu nhiên các ô ở rìa theo
-// seed, để bờ biển lởm chởm tự nhiên thay vì 4 cạnh thẳng tăm tắp. Ô nào nằm gần đường
-// đi thì KHOÁ, không bao giờ gặm — nếu không đường sẽ lơ lửng trên mặt nước.
 function generateIslandMask(paths, seed, rect = ISLAND_RECT) {
   const cell = 64;
-  const cols = Math.round(rect.w / cell), rows = Math.round(rect.h / cell);
-  const idx = (c, rw) => rw * cols + c;
+  const cols = Math.ceil(rect.w / cell), rows = Math.ceil(rect.h / cell);
   const land = new Array(cols * rows).fill(true);
-  const locked = new Array(cols * rows).fill(false);
-
-  const KEEP = 52; // bán kính an toàn quanh tim đường
-  for (const path of paths) {
-    for (const p of path) {
-      const c0 = Math.floor((p.x - KEEP - rect.x) / cell), c1 = Math.floor((p.x + KEEP - rect.x) / cell);
-      const r0 = Math.floor((p.y - KEEP - rect.y) / cell), r1 = Math.floor((p.y + KEEP - rect.y) / cell);
-      for (let rw = r0; rw <= r1; rw++) {
-        for (let c = c0; c <= c1; c++) {
-          if (c >= 0 && c < cols && rw >= 0 && rw < rows) locked[idx(c, rw)] = true;
-        }
-      }
-    }
-  }
-
-  const rng = mulberry32(seed);
-  for (let pass = 0; pass < 3; pass++) {
-    const snap = land.slice();
-    for (let rw = 0; rw < rows; rw++) {
-      for (let c = 0; c < cols; c++) {
-        const i = idx(c, rw);
-        if (!snap[i] || locked[i]) continue;
-        const at = (cc, rr) => (cc < 0 || cc >= cols || rr < 0 || rr >= rows) ? false : snap[rr * cols + cc];
-        if (at(c - 1, rw) && at(c + 1, rw) && at(c, rw - 1) && at(c, rw + 1)) continue; // ô trong lòng đảo
-        const nearCorner = (c <= 1 || c >= cols - 2) && (rw <= 1 || rw >= rows - 2);
-        if (rng() < (nearCorner ? 0.6 : 0.24)) land[i] = false;
-      }
-    }
-  }
   return { cell, cols, rows, land, ox: rect.x, oy: rect.y };
 }
 
 function maskIsLand(m, x, y) {
-  const c = Math.floor((x - m.ox) / m.cell), rw = Math.floor((y - m.oy) / m.cell);
-  if (c < 0 || c >= m.cols || rw < 0 || rw >= m.rows) return false;
-  return m.land[rw * m.cols + c];
+  return x >= 0 && x <= CONFIG.canvas.width && y >= 0 && y <= CONFIG.canvas.height;
 }
 
-// Các ô ĐẤT giáp nước + hướng ra biển — dùng cho bọt sóng, đá ven bờ và viền rừng.
+// Các ô viền quanh 4 mép màn hình — dùng để đặt ranh giới rừng viền quanh map.
 function maskCoastCells(m) {
-  const at = (c, rw) => (c < 0 || c >= m.cols || rw < 0 || rw >= m.rows) ? false : m.land[rw * m.cols + c];
   const list = [];
-  for (let rw = 0; rw < m.rows; rw++) {
-    for (let c = 0; c < m.cols; c++) {
-      if (!at(c, rw)) continue;
-      for (const [dc, dr] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) {
-        if (!at(c + dc, rw + dr)) {
-          list.push({
-            x: m.ox + c * m.cell + m.cell / 2 + dc * m.cell * 0.5,
-            y: m.oy + rw * m.cell + m.cell / 2 + dr * m.cell * 0.5,
-            nx: dc, ny: dr,
-          });
-          break;
-        }
-      }
-    }
+  const W = CONFIG.canvas.width, H = CONFIG.canvas.height;
+  for (let x = 20; x <= W - 20; x += 32) {
+    list.push({ x, y: 18, nx: 0, ny: 1 });
+    list.push({ x, y: H - 18, nx: 0, ny: -1 });
+  }
+  for (let y = 32; y <= H - 32; y += 32) {
+    list.push({ x: 18, y, nx: 1, ny: 0 });
+    list.push({ x: W - 18, y, nx: -1, ny: 0 });
   }
   return list;
 }
@@ -174,8 +164,8 @@ function _nearAnyPath(paths, x, y, radius = NEAR_PATH_SELL_RADIUS) {
 // + kích thước, thỉnh thoảng lật ngang (flip-x) từng vật để đỡ lặp y hệt.
 function scatterDecorations(paths, seed, opts = {}) {
   const rng = mulberry32(seed);
-  const count = opts.count != null ? opts.count : 40;
-  const minPathDist = opts.minPathDist || 40;
+  const count = opts.count != null ? opts.count : 35;
+  const minPathDist = opts.minPathDist || 55;
   const minSpotDist = opts.minSpotDist || 52;
   const clusterGap = opts.clusterGap || 44; // khoảng cách tối thiểu giữa TÂM các cụm
   const buildSpots = opts.buildSpots || [];
@@ -349,10 +339,15 @@ function generateForestBorder(paths, seed, mask) {
     });
   };
   for (const c of coast) {
-    // vòng ngoài: ngay mép nước; vòng trong: lùi vào đất ~32px, so le cho dày
-    place(c.x - c.nx * 6 + (rng() - 0.5) * 20, c.y - c.ny * 6 + (rng() - 0.5) * 20, [52, 74]);
-    if (rng() < 0.75) {
-      place(c.x - c.nx * 34 + (rng() - 0.5) * 24, c.y - c.ny * 34 + (rng() - 0.5) * 24, [44, 62]);
+    // Vòng 1: Ngay sát ranh giới mép đảo (~6px)
+    place(c.x - c.nx * 6 + (rng() - 0.5) * 20, c.y - c.ny * 6 + (rng() - 0.5) * 20, [56, 78]);
+    // Vòng 2: Lùi vào lòng đất (~32px) so le dày dặn
+    if (rng() < 0.85) {
+      place(c.x - c.nx * 32 + (rng() - 0.5) * 24, c.y - c.ny * 32 + (rng() - 0.5) * 24, [48, 66]);
+    }
+    // Vòng 3: Rừng đại ngàn lùi sâu (~58px) tạo vòm rừng xanh rậm rạp hoang sơ
+    if (rng() < 0.65) {
+      place(c.x - c.nx * 58 + (rng() - 0.5) * 28, c.y - c.ny * 58 + (rng() - 0.5) * 28, [42, 58]);
     }
   }
   return list;
@@ -490,27 +485,34 @@ function generateObstacles(paths, seed, opts = {}) {
   // Cho phép đặt SÁT đường hơn (trước 50 khiến vật cản luôn nằm khá xa lối đi) —
   // 30 vẫn đủ để không đè lên chính path (pathWidth/2 = 23), nhưng giờ có cả vật cản
   // ngay ven đường, đúng kiểu "chặn spot tháp đẹp cạnh khúc cua" của thể loại này.
-  const minPathDist = opts.minPathDist || 30;
+  const minPathDist = opts.minPathDist || 32;
+  const maxPathDist = opts.maxPathDist || 75;
   const onLand = opts.isLand || (() => true);
   const avoidPoints = opts.avoidPoints || []; // né khu spawn quái + thành: [{x,y,r}]
-  function tooClose(x, y) {
-    if (!onLand(x, y)) return true;
+  
+  function isValidObstacleSpot(x, y) {
+    if (!onLand(x, y)) return false;
+    if (avoidPoints.some(p => Math.hypot(p.x - x, p.y - y) < p.r)) return false;
+    let minDist = Infinity;
     for (const path of paths) {
-      for (let i = 0; i < path.length - 1; i += 2) {
-        if (distToSegment(x, y, path[i], path[Math.min(i + 2, path.length - 1)]) < minPathDist) return true;
+      for (let i = 0; i < path.length - 1; i++) {
+        const d = distToSegment(x, y, path[i], path[i + 1]);
+        if (d < minDist) minDist = d;
       }
     }
-    return avoidPoints.some(p => Math.hypot(p.x - x, p.y - y) < p.r);
+    // CHỈ đặt chướng ngại vật sát ven đường quái đi (khoảng cách 32px đến 75px)
+    return minDist >= minPathDist && minDist <= maxPathDist;
   }
+
   const obstacles = [];
   const placed = [];
   let tries = 0;
-  while (obstacles.length < count && tries < count * 40) {
+  while (obstacles.length < count && tries < count * 80) {
     tries++;
     const x = 60 + rng() * (CONFIG.canvas.width - 120);
-    const y = 100 + rng() * (CONFIG.canvas.height - 150);
-    if (tooClose(x, y)) continue;
-    if (placed.some(p => Math.hypot(p.x - x, p.y - y) < 90)) continue;
+    const y = 80 + rng() * (CONFIG.canvas.height - 130);
+    if (!isValidObstacleSpot(x, y)) continue;
+    if (placed.some(p => Math.hypot(p.x - x, p.y - y) < 80)) continue;
     const pick = _pickObstacleType(rng);
     const cost = pick.costRange[0] + Math.floor(rng() * (pick.costRange[1] - pick.costRange[0]));
     obstacles.push({
@@ -686,12 +688,10 @@ class GameMap {
   // pathfinding động) nên chỉ cần cấm xây đè lên dải path, không cần tính lại
   // đường đi cho quái.
   isBuildable(x, y, towers, excludeTower = null) {
-    const MIN_TOWER_GAP = 42; // khoảng cách tối thiểu giữa tâm 2 tháp
-    const PATH_MARGIN = 20;   // đệm thêm ngoài mép path (path đã có pathWidth/2 riêng)
+    const MIN_TOWER_GAP = 68; // Khoảng cách tối thiểu 68px giữa tâm 2 tháp (ngăn tháp bị đè/chồng lên nhau)
+    const PATH_MARGIN = 24;   // Đệm thêm ngoài mép đường đi
     const island = this._mainIslandRect;
-    if (x < island.x + 16 || x > island.x + island.w - 16 || y < island.y + 24 || y > island.y + island.h - 8) return false;
-    // Đảo giờ có bờ lởm chởm nên phải kiểm tra theo MẶT NẠ đất thật, không chỉ khung
-    // chữ nhật — nếu không sẽ xây được tháp lơ lửng trên mặt nước ở các khúc bị gặm.
+    if (x < island.x + 20 || x > island.x + island.w - 20 || y < island.y + 28 || y > island.y + island.h - 12) return false;
     if (!this.isLandAt(x, y)) return false;
     for (const path of this.paths) {
       for (let i = 0; i < path.length - 1; i += 2) {
@@ -703,12 +703,10 @@ class GameMap {
       if (Math.hypot(t.x - x, t.y - y) < MIN_TOWER_GAP) return false;
     }
     for (const d of this.decorations) {
-      if (d.kind === 'house' && Math.hypot(d.x - x, d.y - y) < 40) return false;
+      if (d.kind === 'house' && Math.hypot(d.x - x, d.y - y) < 48) return false;
     }
-    // Vật cản CHƯA DỌN chặn xây y hệt 1 chướng ngại vật thật — phải trả vàng phá bỏ
-    // (xem GameMap.drawObstacles + main.js:tryClearObstacle) mới xây được ở đây.
     for (const ob of this.obstacles || []) {
-      if (!ob.cleared && Math.hypot(ob.x - x, ob.y - y) < ob.radius + 26) return false;
+      if (!ob.cleared && Math.hypot(ob.x - x, ob.y - y) < ob.radius + 32) return false;
     }
     return true;
   }
@@ -740,13 +738,9 @@ class GameMap {
   // Toạ độ đảo chính CỐ ĐỊNH cho mọi map (canvas luôn 960x600) — chừa viền nước
   // mỏng quanh khu chơi hiện có (path/buildSpots vốn đã tự né mép 34-84px) nên
   // không cần đổi bất kỳ toạ độ gameplay nào, chỉ đổi phần vẽ nền.
-  get _mainIslandRect() { return { x: 32, y: 12, w: 896, h: 576 }; }
+  get _mainIslandRect() { return { x: 0, y: 0, w: 960, h: 600 }; }
 
   // ---- Mặt nạ hình dạng đảo (lưới ô 64px) ----
-  // Trước đây đảo là 1 hình CHỮ NHẬT hoàn hảo nên 4 cạnh bờ biển thẳng tăm tắp, nhìn
-  // rất nhân tạo. Giờ bắt đầu từ chữ nhật rồi "gặm" ngẫu nhiên (theo seed) các ô ở rìa
-  // để bờ biển lởm chởm tự nhiên. Ràng buộc bắt buộc: KHÔNG bao giờ gặm ô nào nằm gần
-  // đường đi — nếu không đường sẽ lơ lửng trên mặt nước.
   get _islandMask() {
     if (!this.__mask) this.__mask = this.islandMask || generateIslandMask(this.paths, 4300 + (this.id || 0));
     return this.__mask;
@@ -754,36 +748,22 @@ class GameMap {
 
   isLandAt(x, y) { return maskIsLand(this._islandMask, x, y); }
 
-  // Vẽ đảo cỏ theo MẶT NẠ: chọn tile viền dựa trên 4 hàng xóm của từng ô (thay vì chỉ
-  // dựa vào vị trí trong hình chữ nhật), nhờ vậy bờ biển lởm chởm vẫn có viền cỏ đúng.
+  // Vẽ mặt đất tràn toàn bộ màn hình 960x600
   _drawGrassRectInto(ctx) {
     const sheet = AssetLoader.getImage('tsTerrain');
     const m = this._islandMask;
     const cell = m.cell;
-    if (!sheet) {
-      ctx.fillStyle = THEME_BASE[this.theme] || '#3f7a3a';
-      for (let rw = 0; rw < m.rows; rw++) for (let c = 0; c < m.cols; c++) {
-        if (m.land[rw * m.cols + c]) ctx.fillRect(m.ox + c * cell, m.oy + rw * cell, cell, cell);
-      }
-      return;
-    }
-    const at = (c, rw) => (c < 0 || c >= m.cols || rw < 0 || rw >= m.rows) ? false : m.land[rw * m.cols + c];
     ctx.save();
     ctx.filter = THEME_GROUND_FILTERS[this.theme] || THEME_DECOR_FILTERS[this.theme] || 'none';
-    for (let rw = 0; rw < m.rows; rw++) {
-      for (let c = 0; c < m.cols; c++) {
-        if (!at(c, rw)) continue;
-        const up = at(c, rw - 1), down = at(c, rw + 1), left = at(c - 1, rw), right = at(c + 1, rw);
-        let t = GRASS_TILE.c;
-        if (!up && !left) t = GRASS_TILE.tl;
-        else if (!up && !right) t = GRASS_TILE.tr;
-        else if (!down && !left) t = GRASS_TILE.bl;
-        else if (!down && !right) t = GRASS_TILE.br;
-        else if (!up) t = GRASS_TILE.t;
-        else if (!down) t = GRASS_TILE.b;
-        else if (!left) t = GRASS_TILE.l;
-        else if (!right) t = GRASS_TILE.r;
-        ctx.drawImage(sheet, t[0] * cell, t[1] * cell, cell, cell, m.ox + c * cell, m.oy + rw * cell, cell, cell);
+    if (!sheet) {
+      ctx.fillStyle = THEME_BASE[this.theme] || '#3f7a3a';
+      ctx.fillRect(0, 0, CONFIG.canvas.width, CONFIG.canvas.height);
+    } else {
+      const t = GRASS_TILE.c;
+      for (let rw = 0; rw < m.rows; rw++) {
+        for (let c = 0; c < m.cols; c++) {
+          ctx.drawImage(sheet, t[0] * cell, t[1] * cell, cell, cell, m.ox + c * cell, m.oy + rw * cell, cell, cell);
+        }
       }
     }
     ctx.restore();
@@ -868,24 +848,13 @@ class GameMap {
   // Vẽ cụm cỏ lấn mép (2 lớp đậm/nhạt cho có độ dày) lên trên path đã vẽ, rồi rải
   // sỏi nhỏ ngay sát mép ngoài — làm mép đường trông lởm chởm tự nhiên.
   _drawPathEdgeDecorInto(ctx) {
-    const grassDark = darkenHex(THEME_BASE[this.theme] || '#3f7a3a', 0.28);
-    const grassMid = darkenHex(THEME_BASE[this.theme] || '#3f7a3a', 0.1);
-    const { nibbles, rocks } = this._pathEdgeDecor();
+    const { rocks } = this._pathEdgeDecor();
     ctx.save();
-    for (const n of nibbles) {
-      ctx.fillStyle = grassDark;
-      ctx.beginPath(); ctx.ellipse(n.x, n.y, n.r, n.r * 0.72, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = grassMid;
-      ctx.beginPath(); ctx.ellipse(n.x - n.r * 0.2, n.y - n.r * 0.2, n.r * 0.55, n.r * 0.4, 0, 0, Math.PI * 2); ctx.fill();
-    }
     for (const s of rocks) {
       const img = AssetLoader.getImage(s.img);
       if (!img) continue;
       const size = 64 * s.scale;
       ctx.save();
-      // Đá viền đường VẪN GIỮ (là dấu hiệu nhận biết ranh giới đường đi), chỉ nhuộm
-      // theo tông của theme núi lửa — để nguyên màu xám-xanh gốc thì nhìn như đá băng
-      // nằm giữa vùng đất cháy. Chỉ áp cho map núi lửa, các map khác không đổi.
       if (this.volcanic) ctx.filter = THEME_DECOR_FILTERS[this.theme] || 'none';
       ctx.translate(s.x, s.y); ctx.rotate(s.rot);
       ctx.drawImage(img, 0, 0, 64, 64, -size / 2, -size / 2, size, size);
@@ -1015,17 +984,7 @@ class GameMap {
   }
 
   _drawWaterRocksInto(ctx) {
-    for (const s of this._waterRockSpots()) {
-      const img = AssetLoader.getImage(s.img);
-      if (!img) continue;
-      const frame = 64; // Water Rocks_*: sprite sheet hoạt hình, dùng khung đầu (tĩnh) làm decor
-      const size = frame * s.scale;
-      ctx.save();
-      ctx.translate(s.x, s.y);
-      if (s.flip) ctx.scale(-1, 1);
-      ctx.drawImage(img, 0, 0, frame, frame, -size / 2, -size / 2, size, size);
-      ctx.restore();
-    }
+    // Tắt các đốm đá xám chìm dưới nước gây cảm giác giống bóng ma lơ lửng
   }
 
   // Bọt sóng hoạt hình mỏng dọc mép đảo — vẽ động mỗi khung hình (không cache vào
@@ -1077,9 +1036,6 @@ class GameMap {
     const octx = off.getContext('2d');
     octx.imageSmoothingEnabled = false;
 
-    this._drawWaterInto(octx);
-    this._drawWaterRocksInto(octx);
-
     this._drawGrassRectInto(octx);
 
     // Chủ đề núi lửa: phủ vệt tro rồi vẽ khe nứt dung nham TRƯỚC khi vẽ đường đi, để
@@ -1096,7 +1052,7 @@ class GameMap {
     // đường phủ texture đất/sỏi (pattern noise) thay vì fill màu đặc.
     const pal = THEME_PATH_COLORS[this.theme];
     octx.save();
-    octx.lineCap = 'round'; octx.lineJoin = 'round';
+    octx.lineCap = 'square'; octx.lineJoin = 'miter'; octx.miterLimit = 2;
     octx.strokeStyle = pal.pathEdge;
     octx.lineWidth = this.pathWidth + 10;
     this._strokeAllPaths(octx);
@@ -1196,10 +1152,6 @@ class GameMap {
     let sx = d.sx;
     if (animTime != null && d.animated) sx = (Math.floor(animTime / (1000 / d.fps) + d.phase) % d.frames) * d.sw;
     ctx.save();
-    if (d.shadow !== false) {
-      ctx.fillStyle = 'rgba(0,0,0,0.22)';
-      ctx.beginPath(); ctx.ellipse(d.x, d.y - 2, d.dw * 0.36, d.dw * 0.14, 0, 0, Math.PI * 2); ctx.fill();
-    }
     ctx.translate(d.x, d.y);
     if (d.flip) ctx.scale(-1, 1);
     ctx.drawImage(img, sx, d.sy, d.sw, d.sh, -d.dw / 2, -d.dh, d.dw, d.dh);
@@ -1212,7 +1164,6 @@ class GameMap {
   drawBackground(ctx) {
     if (!this._terrainLayer) this._buildTerrainLayer();
     ctx.drawImage(this._terrainLayer, 0, 0);
-    this._drawFoamInto(ctx);
     if (this.volcanic) this._drawEmbersInto(ctx, performance.now());
   }
 
@@ -1282,20 +1233,17 @@ class GameMap {
     const x = d.x + d.dirX * wander, y = d.y + d.dirY * wander;
     const sx = (Math.floor(now / (1000 / fps) + d.phase * 10) % frames) * 128;
     ctx.save();
-    ctx.fillStyle = 'rgba(0,0,0,0.2)';
-    ctx.beginPath(); ctx.ellipse(x, y - 1, d.dw * 0.34, d.dw * 0.13, 0, 0, Math.PI * 2); ctx.fill();
     ctx.translate(x, y);
     if (d.flip !== (moving && wander < 0)) ctx.scale(-1, 1);
-    ctx.drawImage(img, sx, 0, 128, 128, -d.dw / 2, -d.dh, d.dw, d.dh);
+    ctx.drawImage(img, sx, 0, 128, 128, -d.dw / 2, -d.dh * 0.7, d.dw, d.dh);
     ctx.restore();
   }
 
-  // Dân làng đi tuần trang trí: đi tới-lui quanh điểm neo (x0,y0) theo sin, thuần
-  // hình ảnh, không va chạm/không AI — chỉ để khu nhà trông có người sinh sống.
+  // Dân làng đi tuần trang trí: đi tới-lui quanh điểm neo (x0,y0) theo sin
   _drawVillager(ctx, d, now) {
     const t = now + d.phase * 1000;
     const s = Math.sin(t / d.period);
-    const speedSign = Math.cos(t / d.period); // đạo hàm của sin -> hướng di chuyển hiện tại
+    const speedSign = Math.cos(t / d.period);
     const x = d.x0 + d.dirX * d.amplitude * s, y = d.y0 + d.dirY * d.amplitude * s;
     const moving = Math.abs(speedSign) > 0.12;
     const key = moving ? 'villagerRun' : 'villagerIdle';
@@ -1305,11 +1253,9 @@ class GameMap {
     const fps = moving ? 8 : 3;
     const sx = (Math.floor(now / (1000 / fps)) % frames) * 192;
     ctx.save();
-    ctx.fillStyle = 'rgba(0,0,0,0.22)';
-    ctx.beginPath(); ctx.ellipse(x, y - 1, d.dw * 0.34, d.dw * 0.14, 0, 0, Math.PI * 2); ctx.fill();
     ctx.translate(x, y);
     if (speedSign * d.dirX < 0) ctx.scale(-1, 1);
-    ctx.drawImage(img, sx, 0, 192, 192, -d.dw / 2, -d.dh, d.dw, d.dh);
+    ctx.drawImage(img, sx, 0, 192, 192, -d.dw / 2, -d.dh * 0.68, d.dw, d.dh);
     ctx.restore();
   }
 
@@ -1445,10 +1391,16 @@ class GameMap {
     const dx = last.x - prev.x, dy = last.y - prev.y;
     const len = Math.hypot(dx, dy) || 1;
     const nx = -dy / len, ny = dx / len; // vector vuông góc hướng đi
-    const off = 46;
+    // dh của tháp tròn là ~56px. Tính neo đáy chuẩn để cả 2 tháp cách 2 mép đường đúng 2px cân đối.
+    const dh = 56;
+    const gap = 25; // pathWidth / 2 + 2px đệm
+    const p1Y = ny < 0 ? castle.y + ny * gap : castle.y + ny * (gap + dh);
+    const p2Y = ny < 0 ? castle.y - ny * (gap + dh) : castle.y - ny * gap;
+    const p1X = nx < 0 ? castle.x + nx * gap : castle.x + nx * (gap + 10);
+    const p2X = nx < 0 ? castle.x - nx * (gap + 10) : castle.x - nx * gap;
     this.__gatePillarPos = [
-      { x: castle.x + nx * off, y: castle.y + ny * off },
-      { x: castle.x - nx * off, y: castle.y - ny * off },
+      { x: castle.x + nx * gap, y: p1Y },
+      { x: castle.x - nx * gap, y: p2Y },
     ];
     return this.__gatePillarPos;
   }
@@ -1486,8 +1438,6 @@ class GameMap {
       if (camp) {
         const cw = 62, ch = cw * (192 / 128);
         ctx.globalAlpha = 1;
-        ctx.fillStyle = 'rgba(0,0,0,0.25)';
-        ctx.beginPath(); ctx.ellipse(b.x, b.y + 6, cw * 0.32, cw * 0.13, 0, 0, Math.PI * 2); ctx.fill();
         ctx.drawImage(camp, b.x - cw / 2, b.y - ch + 16, cw, ch);
       }
       ctx.filter = 'none';
@@ -1527,18 +1477,14 @@ class GameMap {
       }
     });
 
-    // 2 toà nhà nhỏ hai bên cổng — THUẦN TRANG TRÍ, không có chức năng chiến đấu gì
-    // (trước là trụ tự động bắn quái + toà thành lớn, cả 2 đã bỏ vì nhìn lộn xộn).
-    // castlePos vẫn giữ nguyên làm điểm toạ độ LOGIC (Hero đứng gác/hồi sinh trước
-    // cổng, quái reachedEnd ở đây) dù không còn vẽ công trình lớn nữa.
-    const gateImgs = [this._getFilteredImage('house1', HOUSE_DECOR_FILTER), this._getFilteredImage('house2', HOUSE_DECOR_FILTER)];
-    this.gatePillarPositions.forEach((p, i) => {
-      const img = gateImgs[i];
-      if (!img) return;
-      const dw = 42, dh = dw * (img.height / img.width);
-      ctx.fillStyle = 'rgba(0,0,0,0.22)';
-      ctx.beginPath(); ctx.ellipse(p.x, p.y + 3, dw * 0.36, dw * 0.14, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.drawImage(img, p.x - dw / 2, p.y - dh, dw, dh);
+    // 2 toà tháp pháo đài hai bên cổng thành — canh giữ lối vào điểm cuối đường,
+    // dùng sprite tháp tròn (blueTower/yellowTower/redTower) thay cho 2 căn nhà cũ.
+    const towerKey = this.theme === 'autumn' ? 'yellowTower' : (this.theme === 'volcano' ? 'redTower' : 'blueTower');
+    const towerImg = this._getFilteredImage(towerKey, THEME_DECOR_FILTERS[this.theme] || 'none');
+    this.gatePillarPositions.forEach((p) => {
+      if (!towerImg) return;
+      const dw = 34, dh = dw * (towerImg.height / towerImg.width);
+      ctx.drawImage(towerImg, p.x - dw / 2, p.y - dh, dw, dh);
     });
     ctx.restore();
   }
@@ -1554,16 +1500,12 @@ class GameMap {
     ctx.save();
     const dw = 46, dh = img ? dw * (img.height / img.width) : dw;
     const drawMineMouth = (x, y) => {
-      ctx.fillStyle = 'rgba(0,0,0,0.25)';
-      ctx.beginPath(); ctx.ellipse(x, y + dh * 0.32, dw * 0.4, dw * 0.15, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.drawImage(img, 0, 0, img.width, img.height, x - dw / 2, y - dh * 0.62, dw, dh);
+      ctx.drawImage(img, 0, 0, img.width, img.height, x - dw / 2, y - dh * 0.82, dw, dh);
     };
     const now = performance.now();
     const drawPortal = (x, y, color) => {
       const pulse = 0.85 + Math.sin(now / 260 + x * 0.01 + y * 0.01) * 0.15;
       const r = 20 * pulse;
-      ctx.fillStyle = 'rgba(0,0,0,0.22)';
-      ctx.beginPath(); ctx.ellipse(x, y + 10, r * 0.7, r * 0.28, 0, 0, Math.PI * 2); ctx.fill();
       const grad = ctx.createRadialGradient(x, y, 1, x, y, r);
       grad.addColorStop(0, '#ffffff');
       grad.addColorStop(0.35, color);
@@ -1592,16 +1534,11 @@ class GameMap {
     ctx.restore();
   }
 
-  // Map có `pathPattern` (đổi đường theo wave) — trả về chỉ số path đang MỞ ở wave
-  // đó (đường còn lại bị chặn). waveIndex<0 (chưa bắt đầu wave nào) coi như wave 0.
   activePathIndex(waveIndex) {
     if (!this.pathPattern || !this.pathPattern.length) return null;
     return this.pathPattern[Math.max(0, waveIndex) % this.pathPattern.length];
   }
 
-  // Vẽ rào chắn đầu lâu (skullSpike, tái dùng asset đã có) chặn NGAY MIỆNG đường
-  // không được dùng ở wave hiện tại, và 1 vòng hào quang xanh nhẹ đánh dấu đường
-  // đang mở — cho người chơi thấy rõ đường nào "khoá" trước khi bấm wave tiếp theo.
   drawPathGates(ctx, waveIndex) {
     if (!this.pathPattern) return;
     const active = this.activePathIndex(waveIndex);
@@ -1612,7 +1549,7 @@ class GameMap {
       const p0 = path[0], p1 = path[Math.min(3, path.length - 1)];
       const dx = p1.x - p0.x, dy = p1.y - p0.y;
       const len = Math.hypot(dx, dy) || 1;
-      const nx = -dy / len, ny = dx / len; // vector vuông góc hướng đi, dùng để xếp hàng rào ngang qua đường
+      const nx = -dy / len, ny = dx / len;
       if (i === active) {
         const pulse = 0.8 + Math.sin(now / 300) * 0.2;
         const grad = ctx.createRadialGradient(p0.x, p0.y, 2, p0.x, p0.y, 34 * pulse);
@@ -1623,7 +1560,7 @@ class GameMap {
       } else if (spikeImg) {
         const sw = 30, sh = sw * (spikeImg.height / spikeImg.width);
         ctx.save();
-        ctx.filter = 'sepia(1) saturate(4) hue-rotate(-40deg) brightness(0.75)'; // tint đỏ máu cho rào "đóng"
+        ctx.filter = 'sepia(1) saturate(4) hue-rotate(-40deg) brightness(0.75)';
         for (const off of [-14, 0, 14]) {
           const sx = p0.x + nx * off, sy = p0.y + ny * off;
           ctx.drawImage(spikeImg, 0, 0, spikeImg.width, spikeImg.height, sx - sw / 2, sy - sh * 0.85, sw, sh);
@@ -1634,18 +1571,12 @@ class GameMap {
     ctx.restore();
   }
 
-  // Vẽ 1 vật cản CHƯA DỌN (đá/bụi/nhà hoang) — gọi từ obstacleEntities() trong lượt
-  // y-sort của main.js, không còn bake tĩnh vì có thể biến mất giữa trận. Luôn hiện
-  // nhãn giá (kiểu bảng giá gỗ nhỏ) phía trên khi hover, sáng lên nếu đủ tiền.
-  // `ui` (main.js truyền): { hoverX, hoverY, gold }
   _drawObstacleItem(ctx, ob, ui = {}) {
     const img = AssetLoader.getImage(ob.img);
     const hovered = ui.hoverX != null && Math.hypot(ui.hoverX - ob.x, ui.hoverY - ob.y) <= ob.radius + 8;
     const affordable = (ui.gold || 0) >= ob.cost;
 
     ctx.save();
-    ctx.fillStyle = 'rgba(0,0,0,0.25)';
-    ctx.beginPath(); ctx.ellipse(ob.x, ob.y + 3, ob.dw * 0.38, ob.dw * 0.15, 0, 0, Math.PI * 2); ctx.fill();
     if (img) {
       ctx.save();
       // Nhà hoang dùng lại đúng bộ lọc "cũ kỹ" của generateVillage cho khớp tông;
@@ -1660,22 +1591,24 @@ class GameMap {
       ctx.restore();
     }
 
-    // Bảng giá nhỏ phía trên — CHỈ hiện khi rê chuột vào, đỡ rối mắt lúc nhìn map
-    // tổng thể (trước hiện thường trực mọi vật cản cùng lúc).
+    // CHỈ hiện thẻ dọn dẹp (🔨 Dọn: 40g) KHI RÊ CHUỘT VÀO vật cản — để map không bị rối mắt
     if (hovered) {
-      const label = `${ob.cost}`;
+      const label = `🔨 Dọn: ${ob.cost}g`;
       ctx.font = 'bold 11px sans-serif';
-      const w = ctx.measureText(label).width + 22;
+      const w = ctx.measureText(label).width + 14;
       const ly = ob.y - ob.dh - 10;
-      ctx.fillStyle = affordable ? 'rgba(38,14,10,0.88)' : 'rgba(60,16,12,0.88)';
-      ctx.beginPath(); ctx.roundRect(ob.x - w / 2, ly - 9, w, 16, 5); ctx.fill();
-      ctx.strokeStyle = 'rgba(255,190,90,0.9)';
-      ctx.lineWidth = 1.5; ctx.stroke();
+      
+      ctx.fillStyle = affordable ? 'rgba(32,18,10,0.94)' : 'rgba(50,14,10,0.94)';
+      ctx.beginPath(); ctx.roundRect(ob.x - w / 2, ly - 9, w, 18, 5); ctx.fill();
+      ctx.strokeStyle = affordable ? '#ffdc78' : '#ff9a8a';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      
       ctx.fillStyle = affordable ? '#ffdc78' : '#ff9a8a';
-      ctx.textAlign = 'left'; ctx.fillText(label, ob.x - w / 2 + 15, ly + 4);
-      ctx.font = '10px sans-serif'; ctx.fillText('🪙', ob.x - w / 2 + 4, ly + 4);
-      ctx.textAlign = 'center';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(label, ob.x, ly);
     }
+    
     ctx.restore();
   }
 }
@@ -1875,7 +1808,7 @@ const MAPS = [
     // Map 1: Tây → thành bên PHẢI (Đông), hình chữ Z (thanh ngang trên, chéo xuống,
     // thanh ngang dưới) — ngoằn ngoèo hơn hẳn đường thẳng cũ mà vẫn dễ đọc cho tân thủ.
     rawPaths: [[
-      { x: -20, y: 130 }, { x: 750, y: 130 }, { x: 230, y: 470 }, { x: 980, y: 470 },
+      { x: -20, y: 130 }, { x: 720, y: 130 }, { x: 720, y: 300 }, { x: 220, y: 300 }, { x: 220, y: 470 }, { x: 980, y: 470 },
     ]],
     seed: 3001, decorCount: 40, sheepCount: 3, totalWaves: 6, obstacleCount: 4,
   }),
@@ -1885,7 +1818,7 @@ const MAPS = [
     // Map 2: Nam → thành bên TRÊN (Bắc), hình chữ M (lên-xuống-lên-xuống-lên) — 2
     // đỉnh rõ rệt, mỗi đỉnh là 1 chỗ đặt cụm tháp tốt.
     rawPaths: [[
-      { x: 150, y: 620 }, { x: 150, y: 120 }, { x: 480, y: 400 }, { x: 810, y: 120 }, { x: 810, y: -20 },
+      { x: 150, y: 620 }, { x: 150, y: 130 }, { x: 480, y: 130 }, { x: 480, y: 440 }, { x: 810, y: 440 }, { x: 810, y: -20 },
     ]],
     seed: 3002, decorCount: 44, sheepCount: 2, totalWaves: 8, obstacleCount: 5,
   }),
@@ -1928,8 +1861,8 @@ const MAPS = [
     // Map 5: Bắc & Nam hợp lại thành 1 (hình chữ Y) rồi đánh thẳng vào thành Đông —
     // dồn hoả lực + tháp làm chậm ngay tại ngã ba hợp lưu (450,300).
     rawPaths: [
-      [{ x: 350, y: -20 }, { x: 350, y: 250 }, { x: 450, y: 300 }, { x: 980, y: 300 }],
-      [{ x: 350, y: 620 }, { x: 350, y: 350 }, { x: 450, y: 300 }, { x: 980, y: 300 }],
+      [{ x: 350, y: -20 }, { x: 350, y: 300 }, { x: 980, y: 300 }],
+      [{ x: 350, y: 620 }, { x: 350, y: 300 }, { x: 980, y: 300 }],
     ],
     seed: 3005, decorCount: 38, sheepCount: 4, obstacleCount: 6,
     waves: [
@@ -1980,9 +1913,9 @@ const MAPS = [
     // Map 6: Tây, Bắc, Nam ngoằn ngoèo tụ về 1 cửa ải Đông — tháp giá rẻ rải theo 3
     // luồng để rỉa máu, tháp AoE mạnh nhất đặt ngay cửa ải cuối (600,300)→(980,300).
     rawPaths: [
-      [{ x: -20, y: 300 }, { x: 280, y: 150 }, { x: 280, y: 450 }, { x: 600, y: 300 }, { x: 980, y: 300 }],
-      [{ x: 480, y: -20 }, { x: 480, y: 200 }, { x: 750, y: 200 }, { x: 750, y: 300 }, { x: 980, y: 300 }],
-      [{ x: 480, y: 620 }, { x: 480, y: 420 }, { x: 750, y: 420 }, { x: 750, y: 300 }, { x: 980, y: 300 }],
+      [{ x: -20, y: 300 }, { x: 240, y: 300 }, { x: 240, y: 150 }, { x: 600, y: 150 }, { x: 600, y: 300 }, { x: 980, y: 300 }],
+      [{ x: 440, y: -20 }, { x: 440, y: 180 }, { x: 760, y: 180 }, { x: 760, y: 300 }, { x: 980, y: 300 }],
+      [{ x: 440, y: 620 }, { x: 440, y: 420 }, { x: 760, y: 420 }, { x: 760, y: 300 }, { x: 980, y: 300 }],
     ],
     seed: 3006, decorCount: 44, sheepCount: 1, obstacleCount: 6,
     waves: [
@@ -2051,8 +1984,8 @@ const MAPS = [
     // phải nằm HẲN trong canvas — để y=620 khiến khúc cua bo tròn cuối đường bị cắt
     // cụt ngoài màn hình (báo lỗi "đường mòn bị tràn/thụt xuống khỏi màn hình").
     rawPaths: [
-      [{ x: -20, y: 60 }, { x: 820, y: 540 }, { x: 480, y: 580 }],
-      [{ x: 980, y: 60 }, { x: 150, y: 540 }, { x: 480, y: 580 }],
+      [{ x: -20, y: 120 }, { x: 760, y: 120 }, { x: 760, y: 480 }, { x: 480, y: 480 }, { x: 480, y: 580 }],
+      [{ x: 980, y: 120 }, { x: 200, y: 120 }, { x: 200, y: 480 }, { x: 480, y: 480 }, { x: 480, y: 580 }],
     ],
     seed: 3007, decorCount: 46, sheepCount: 1, obstacleCount: 6,
     waves: [
@@ -2124,124 +2057,121 @@ const MAPS = [
   defineMap({
     id: 7, name: 'Miệng Núi Lửa', theme: 'volcano', season: 'summer', difficulty: 1.85,
     volcanic: true, decorPool: VOLCANO_DECOR_POOL,
-    // Map 8 — CHỐT Giai đoạn 2, khó nhất: CẢ 4 PHÍA (Bắc/Nam/Tây/Đông) cùng lúc,
-    // mỗi hướng lượn cong 1 nhịp trước khi hội tụ về đúng tâm bản đồ (480,300) —
-    // phải chia nhỏ tài nguyên giữ cả 4 cổng phụ rồi dồn tháp Hạng Nặng ôm sát tâm.
+    // Map 8 — CHỐT Giai đoạn 2 (Boss Hạ): 2 đường lượn sóng mềm mại qua thung lũng núi lửa
+    // hội tụ về cổng thành phía Đông, không còn 4 đường đâm thẳng rối mắt.
     rawPaths: [
-      [{ x: 480, y: -20 }, { x: 650, y: 180 }, { x: 480, y: 300 }],
-      [{ x: 480, y: 620 }, { x: 310, y: 420 }, { x: 480, y: 300 }],
-      [{ x: -20, y: 300 }, { x: 180, y: 470 }, { x: 480, y: 300 }],
-      [{ x: 980, y: 300 }, { x: 780, y: 130 }, { x: 480, y: 300 }],
+      [{ x: -20, y: 150 }, { x: 260, y: 150 }, { x: 260, y: 440 }, { x: 680, y: 440 }, { x: 680, y: 270 }, { x: 980, y: 270 }],
+      [{ x: -20, y: 450 }, { x: 340, y: 450 }, { x: 340, y: 180 }, { x: 680, y: 180 }, { x: 680, y: 330 }, { x: 980, y: 330 }],
     ],
-    seed: 3008, decorCount: 40, sheepCount: 0, bossType: 'bossSummer', obstacleCount: 6,
+    seed: 3008, decorCount: 52, sheepCount: 0, bossType: 'bossSummer', obstacleCount: 7,
     extraDecor: [
-      { img: 'blueTower', sx: 0, sy: 0, sw: 128, sh: 256, x: 350, y: 180, dw: 28, dh: 56 },
-      { img: 'blueTower', sx: 0, sy: 0, sw: 128, sh: 256, x: 610, y: 180, dw: 28, dh: 56 },
+      { img: 'blueTower', sx: 0, sy: 0, sw: 128, sh: 256, x: 260, y: 280, dw: 30, dh: 60 },
+      { img: 'blueTower', sx: 0, sy: 0, sw: 128, sh: 256, x: 680, y: 360, dw: 30, dh: 60 },
     ],
     waves: [
       [{ type: 'normal', count: 8, interval: 0.75, delay: 0, path: 0 }],
       [
-        { type: 'normal', count: 8, interval: 0.7,  delay: 0, path: 2 },
+        { type: 'normal', count: 8, interval: 0.7,  delay: 0, path: 0 },
         { type: 'fast',   count: 5, interval: 0.45, delay: 1, path: 1 },
       ],
       [
-        { type: 'normal', count: 7, interval: 0.7,  delay: 0,   path: 3 },
+        { type: 'normal', count: 7, interval: 0.7,  delay: 0,   path: 1 },
         { type: 'fast',   count: 5, interval: 0.4,  delay: 0.8, path: 0 },
       ],
       [
         { type: 'tank',   count: 4, interval: 1.1,  delay: 0,   path: 1 },
-        { type: 'normal', count: 8, interval: 0.6,  delay: 0.5, path: 2 },
+        { type: 'normal', count: 8, interval: 0.6,  delay: 0.5, path: 0 },
       ],
       [
         { type: 'fast', count: 7, interval: 0.35, delay: 0,   path: 0 },
-        { type: 'fast', count: 7, interval: 0.35, delay: 0,   path: 3 },
+        { type: 'fast', count: 7, interval: 0.35, delay: 0,   path: 1 },
         { type: 'tank', count: 3, interval: 1.1,  delay: 1.5, path: 1 },
       ],
       [
-        { type: 'flying', count: 5, interval: 0.8,  delay: 0,   path: 2 },
+        { type: 'flying', count: 5, interval: 0.8,  delay: 0,   path: 0 },
         { type: 'normal', count: 9, interval: 0.55, delay: 0,   path: 0 },
         { type: 'normal', count: 9, interval: 0.55, delay: 0.3, path: 1 },
       ],
       [
-        { type: 'tank',   count: 5, interval: 1.0,  delay: 0, path: 3 },
+        { type: 'tank',   count: 5, interval: 1.0,  delay: 0, path: 1 },
         { type: 'flying', count: 6, interval: 0.75, delay: 1, path: 0 },
-        { type: 'fast',   count: 8, interval: 0.35, delay: 0, path: 2 },
+        { type: 'fast',   count: 8, interval: 0.35, delay: 0, path: 0 },
       ],
       [
         { type: 'normal', count: 10, interval: 0.5,  delay: 0, path: 0 },
         { type: 'tank',   count: 5,  interval: 1.0,  delay: 0, path: 1 },
-        { type: 'flying', count: 6,  interval: 0.7,  delay: 1, path: 3 },
+        { type: 'flying', count: 6,  interval: 0.7,  delay: 1, path: 1 },
       ],
       [
         { type: 'fast',   count: 9, interval: 0.3,  delay: 0,   path: 0 },
-        { type: 'fast',   count: 9, interval: 0.3,  delay: 0,   path: 2 },
+        { type: 'fast',   count: 9, interval: 0.3,  delay: 0,   path: 0 },
         { type: 'tank',   count: 5, interval: 0.95, delay: 1.5, path: 1 },
-        { type: 'flying', count: 6, interval: 0.7,  delay: 0,   path: 3 },
+        { type: 'flying', count: 6, interval: 0.7,  delay: 0,   path: 1 },
       ],
       [
         { type: 'tank',   count: 6,  interval: 0.9, delay: 0, path: 0 },
-        { type: 'tank',   count: 6,  interval: 0.9, delay: 0, path: 2 },
+        { type: 'tank',   count: 6,  interval: 0.9, delay: 0, path: 0 },
         { type: 'normal', count: 11, interval: 0.5, delay: 0, path: 1 },
-        { type: 'flying', count: 7,  interval: 0.65, delay: 1, path: 3 },
+        { type: 'flying', count: 7,  interval: 0.65, delay: 1, path: 1 },
       ],
       [
         { type: 'normal', count: 10, interval: 0.5,  delay: 0, path: 0 },
         { type: 'fast',   count: 10, interval: 0.3,  delay: 0, path: 1 },
         { type: 'tank',   count: 6,  interval: 0.9,  delay: 0, path: 1 },
-        { type: 'flying', count: 6,  interval: 0.65, delay: 0.5, path: 2 },
+        { type: 'flying', count: 6,  interval: 0.65, delay: 0.5, path: 0 },
       ],
       [
-        { type: 'normal', count: 10, interval: 0.5,  delay: 0, path: 2 },
+        { type: 'normal', count: 10, interval: 0.5,  delay: 0, path: 0 },
         { type: 'fast',   count: 11, interval: 0.3,  delay: 0, path: 0 },
         { type: 'tank',   count: 6,  interval: 0.9,  delay: 0, path: 1 },
         { type: 'flying', count: 6,  interval: 0.65, delay: 0.5, path: 0 },
       ],
       [
-        { type: 'normal', count: 10, interval: 0.5,  delay: 0, path: 3 },
+        { type: 'normal', count: 10, interval: 0.5,  delay: 0, path: 1 },
         { type: 'fast',   count: 11, interval: 0.3,  delay: 0, path: 0 },
-        { type: 'tank',   count: 7,  interval: 0.9,  delay: 0, path: 3 },
-        { type: 'flying', count: 6,  interval: 0.65, delay: 0.5, path: 3 },
-      ],
-      [
-        { type: 'normal', count: 11, interval: 0.5,  delay: 0, path: 2 },
-        { type: 'fast',   count: 12, interval: 0.3,  delay: 0, path: 3 },
         { type: 'tank',   count: 7,  interval: 0.9,  delay: 0, path: 1 },
-        { type: 'flying', count: 7,  interval: 0.65, delay: 0.5, path: 3 },
+        { type: 'flying', count: 6,  interval: 0.65, delay: 0.5, path: 1 },
       ],
       [
         { type: 'normal', count: 11, interval: 0.5,  delay: 0, path: 0 },
-        { type: 'fast',   count: 12, interval: 0.3,  delay: 0, path: 2 },
+        { type: 'fast',   count: 12, interval: 0.3,  delay: 0, path: 1 },
         { type: 'tank',   count: 7,  interval: 0.9,  delay: 0, path: 1 },
-        { type: 'flying', count: 7,  interval: 0.65, delay: 0.5, path: 3 },
+        { type: 'flying', count: 7,  interval: 0.65, delay: 0.5, path: 1 },
+      ],
+      [
+        { type: 'normal', count: 11, interval: 0.5,  delay: 0, path: 0 },
+        { type: 'fast',   count: 12, interval: 0.3,  delay: 0, path: 0 },
+        { type: 'tank',   count: 7,  interval: 0.9,  delay: 0, path: 1 },
+        { type: 'flying', count: 7,  interval: 0.65, delay: 0.5, path: 1 },
       ],
       [
         { type: 'normal', count: 11, interval: 0.5,  delay: 0, path: 1 },
         { type: 'fast',   count: 13, interval: 0.3,  delay: 0, path: 0 },
         { type: 'tank',   count: 7,  interval: 0.9,  delay: 0, path: 0 },
-        { type: 'flying', count: 7,  interval: 0.65, delay: 0.5, path: 3 },
+        { type: 'flying', count: 7,  interval: 0.65, delay: 0.5, path: 1 },
       ],
       [
         { type: 'normal', count: 11, interval: 0.5,  delay: 0, path: 0 },
-        { type: 'fast',   count: 14, interval: 0.3,  delay: 0, path: 2 },
-        { type: 'tank',   count: 8,  interval: 0.9,  delay: 0, path: 2 },
-        { type: 'flying', count: 7,  interval: 0.65, delay: 0.5, path: 2 },
+        { type: 'fast',   count: 14, interval: 0.3,  delay: 0, path: 0 },
+        { type: 'tank',   count: 8,  interval: 0.9,  delay: 0, path: 0 },
+        { type: 'flying', count: 7,  interval: 0.65, delay: 0.5, path: 0 },
       ],
       [
         { type: 'normal', count: 11, interval: 0.5,  delay: 0, path: 1 },
         { type: 'fast',   count: 14, interval: 0.3,  delay: 0, path: 1 },
-        { type: 'tank',   count: 8,  interval: 0.9,  delay: 0, path: 2 },
+        { type: 'tank',   count: 8,  interval: 0.9,  delay: 0, path: 0 },
         { type: 'flying', count: 7,  interval: 0.65, delay: 0.5, path: 0 },
       ],
       [
         { type: 'normal', count: 12, interval: 0.5,  delay: 0, path: 0 },
         { type: 'fast',   count: 15, interval: 0.3,  delay: 0, path: 0 },
         { type: 'tank',   count: 8,  interval: 0.9,  delay: 0, path: 1 },
-        { type: 'flying', count: 8,  interval: 0.65, delay: 0.5, path: 3 },
+        { type: 'flying', count: 8,  interval: 0.65, delay: 0.5, path: 1 },
       ],
       [
         { type: 'normal', count: 12, interval: 0.5,  delay: 0,   path: 0 },
-        { type: 'tank',   count: 9,  interval: 0.9,  delay: 0,   path: 2 },
-        { type: 'flying', count: 8,  interval: 0.65, delay: 0.5, path: 3 },
+        { type: 'tank',   count: 9,  interval: 0.9,  delay: 0,   path: 0 },
+        { type: 'flying', count: 8,  interval: 0.65, delay: 0.5, path: 1 },
         { type: 'bossSummer', count: 1, interval: 1, delay: 3,   path: 0 },
       ],
     ],
@@ -2476,29 +2406,22 @@ const MAPS = [
   }),
 
   defineMap({
-    // Map 12: đảo chiều bản đồ — quái spawn bên PHẢI, thành đặt bên TRÁI (ngược lại
-    // tất cả map trước đó luôn spawn trái/thành phải). Toạ độ lấy đối xứng gương
-    // qua trục dọc (x' = 960 - x) từ layout gốc để giữ nguyên độ ngoằn ngoèo.
-    // + cổng dịch chuyển màu (tái dùng cơ chế Map 10) trên cả 2 path, kéo dài lên
-    // 20 wave, quái đông/trâu/dồn dập hơn hẳn (xem buildMap12Waves), wave 15 dồn cả
-    // 3 boss mùa khác (trừ Xuân) cùng lúc, wave 20 là chung kết.
+    // Map 12 (Boss Thu): đảo chiều bản đồ — quái spawn bên PHẢI (Đông), thành đặt bên TRÁI (Tây).
+    // Đường đi được bo mượt 2 nhánh hoàng gia thông thoáng qua khuôn viên lâu đài bỏ hoang.
     id: 11, name: 'Lâu Đài Bỏ Hoang', theme: 'autumn', season: 'autumn', difficulty: 2.70,
     rawPaths: [
-      [{ x: 980, y: 120 }, { x: 800, y: 120 }, { x: 800, y: 330 }, { x: 650, y: 330 }, { x: 650, y: 120 }, { x: 500, y: 120 }, { x: 500, y: 340 }, { x: 350, y: 340 }, { x: 350, y: 160 }, { x: 200, y: 160 }, { x: 200, y: 350 }, { x: 60, y: 350 }, { x: 60, y: 300 }, { x: -20, y: 300 }],
-      [{ x: 980, y: 480 }, { x: 760, y: 480 }, { x: 760, y: 270 }, { x: 610, y: 270 }, { x: 610, y: 480 }, { x: 460, y: 480 }, { x: 460, y: 260 }, { x: 310, y: 260 }, { x: 310, y: 440 }, { x: 160, y: 440 }, { x: 160, y: 250 }, { x: 30, y: 250 }, { x: 30, y: 300 }, { x: -20, y: 300 }],
+      [{ x: 980, y: 150 }, { x: 720, y: 150 }, { x: 720, y: 380 }, { x: 420, y: 380 }, { x: 420, y: 220 }, { x: 160, y: 220 }, { x: 160, y: 300 }, { x: -20, y: 300 }],
+      [{ x: 980, y: 450 }, { x: 720, y: 450 }, { x: 720, y: 260 }, { x: 420, y: 260 }, { x: 420, y: 420 }, { x: 160, y: 420 }, { x: 160, y: 300 }, { x: -20, y: 300 }],
     ],
-    // Đổi lại thành miệng hầm mỏ (goldMine, bỏ `color` để không vẽ dạng cổng phép
-    // phát sáng) + dời cửa vào lên khúc cua kế tiếp trên đường (idx2->idx3), cửa ra
-    // dời xa hơn 2 khúc cua nữa (idx4->idx6) — hầm giờ "cắt tắt" dài hơn, bỏ qua 2
-    // khúc cua liên tiếp thay vì chỉ 1 như trước.
     tunnels: [
-      { x: 650, y: 330, exitX: 500, exitY: 340, r: 22 }, // 0 (path0, idx3->idx6)
-      { x: 610, y: 270, exitX: 460, exitY: 260, r: 22 }, // 1 (path1, idx3->idx6)
+      { x: 720, y: 150, exitX: 420, exitY: 380, r: 22 }, // 0 hầm mỏ (path0)
+      { x: 720, y: 450, exitX: 420, exitY: 260, r: 22 }, // 1 hầm mỏ (path1)
     ],
-    seed: 3012, decorCount: 40, sheepCount: 0, obstacleCount: 7,
+    seed: 3012, decorCount: 54, sheepCount: 2, obstacleCount: 8,
     extraDecor: [
-      { img: 'blueTower', sx: 0, sy: 0, sw: 128, sh: 256, x: 50, y: 250, dw: 28, dh: 56 },
-      { img: 'blueTower', sx: 0, sy: 0, sw: 128, sh: 256, x: 10, y: 350, dw: 28, dh: 56 },
+      { img: 'blueTower', sx: 0, sy: 0, sw: 128, sh: 256, x: 720, y: 270, dw: 32, dh: 64 },
+      { img: 'blueTower', sx: 0, sy: 0, sw: 128, sh: 256, x: 420, y: 300, dw: 32, dh: 64 },
+      { img: 'blueTower', sx: 0, sy: 0, sw: 128, sh: 256, x: 160, y: 150, dw: 32, dh: 64 },
     ],
     waves: buildMap12Waves(),
   }),
@@ -2532,12 +2455,12 @@ const MAPS = [
   defineMap({
     id: 13, name: 'Rừng Tuyết', theme: 'winter', season: 'winter', difficulty: 2.75,
     rawPaths: [
-      [{ x: -20, y: 100 }, { x: 300, y: 100 }, { x: 500, y: 300 }, { x: 300, y: 500 }, { x: 480, y: 620 }], // Tây Bắc chéo xuống, cắt ngang path kia ở giữa
-      [{ x: 980, y: 100 }, { x: 680, y: 100 }, { x: 480, y: 300 }, { x: 680, y: 500 }, { x: 480, y: 620 }], // Đông Bắc chéo xuống, đối xứng gương
+      [{ x: -20, y: 120 }, { x: 320, y: 120 }, { x: 320, y: 480 }, { x: 480, y: 480 }, { x: 480, y: 620 }],
+      [{ x: 980, y: 120 }, { x: 640, y: 120 }, { x: 640, y: 480 }, { x: 480, y: 480 }, { x: 480, y: 620 }],
     ],
     tunnels: [
-      { x: 300, y: 100, exitX: 300, exitY: 500, r: 22 }, // 0 hầm mỏ (path0, nhảy tắt qua điểm giao chéo giữa map)
-      { x: 680, y: 100, exitX: 680, exitY: 500, r: 22 }, // 1 hầm mỏ (path1, nhảy tắt qua điểm giao chéo giữa map)
+      { x: 320, y: 120, exitX: 480, exitY: 480, r: 22 },
+      { x: 640, y: 120, exitX: 480, exitY: 480, r: 22 },
     ],
     seed: 3014, decorCount: 44, sheepCount: 0, obstacleCount: 8,
     waves: buildConvergedWaves(2, 17, 'bossWinter', [
@@ -2569,27 +2492,23 @@ const MAPS = [
   }),
 
   defineMap({
-    // Map CUỐI CÙNG của game — đỉnh điểm độ khó, GOM ĐỦ mọi cơ chế đã xây dựng ở
-    // Giai Đoạn 3: 3 hướng hội tụ thật (Tây x2 ngoằn ngoèo + Bắc) + hầm mỏ dịch
-    // chuyển (như Map 9) rải rác giữa trận — mỗi con chui hầm hay không giờ
-    // TUNG XÚC XẮC RIÊNG (tunnelChance, xem wave.js) thay vì cả nhóm luôn chui/luôn
-    // không, cho cảm giác dịch chuyển ngẫu nhiên thật sự — kéo dài lên 20 wave, Boss
-    // Mùa Đông (Nữ Hoàng Băng Giá, chiêu frostSlow làm chậm nhịp bắn tháp quanh nó —
-    // xem enemy.js) chốt hạ ở wave 20.
+    // Map CUỐI CÙNG của game (Boss Đông / Nữ Hoàng Băng Giá) — 3 đại lộ uy nghi bo cong
+    // thông thoáng hội tụ về Cung Điện Băng ở phía Đông, đẹp mắt và dễ quan sát.
     id: 15, name: 'Cung Điện Băng', theme: 'winter', season: 'winter', difficulty: 3.20,
     rawPaths: [
-      [{ x: -20, y: 120 }, { x: 150, y: 120 }, { x: 150, y: 340 }, { x: 300, y: 340 }, { x: 300, y: 120 }, { x: 450, y: 120 }, { x: 450, y: 350 }, { x: 600, y: 350 }, { x: 600, y: 150 }, { x: 750, y: 150 }, { x: 750, y: 360 }, { x: 860, y: 360 }, { x: 860, y: 180 }, { x: 940, y: 180 }, { x: 940, y: 280 }, { x: 980, y: 280 }],
-      [{ x: -20, y: 480 }, { x: 190, y: 480 }, { x: 190, y: 260 }, { x: 340, y: 260 }, { x: 340, y: 480 }, { x: 490, y: 480 }, { x: 490, y: 250 }, { x: 640, y: 250 }, { x: 640, y: 450 }, { x: 790, y: 450 }, { x: 790, y: 240 }, { x: 900, y: 240 }, { x: 900, y: 420 }, { x: 950, y: 420 }, { x: 950, y: 280 }, { x: 980, y: 280 }],
-      [{ x: 480, y: -20 }, { x: 480, y: 200 }, { x: 750, y: 200 }, { x: 750, y: 280 }, { x: 980, y: 280 }],
+      [{ x: -20, y: 150 }, { x: 320, y: 150 }, { x: 320, y: 270 }, { x: 680, y: 270 }, { x: 680, y: 300 }, { x: 980, y: 300 }],
+      [{ x: -20, y: 450 }, { x: 320, y: 450 }, { x: 320, y: 330 }, { x: 680, y: 330 }, { x: 680, y: 300 }, { x: 980, y: 300 }],
+      [{ x: 480, y: -20 }, { x: 480, y: 200 }, { x: 750, y: 200 }, { x: 750, y: 300 }, { x: 980, y: 300 }],
     ],
     tunnels: [
-      { x: 150, y: 340, exitX: 300, exitY: 120, r: 22 }, // 0 hầm mỏ (path0, bỏ qua khúc cua 300,340)
-      { x: 190, y: 260, exitX: 340, exitY: 480, r: 22 }, // 1 hầm mỏ (path1, bỏ qua khúc cua 340,260)
+      { x: 320, y: 150, exitX: 680, exitY: 270, r: 22 }, // 0 hầm mỏ (path0)
+      { x: 320, y: 450, exitX: 680, exitY: 330, r: 22 }, // 1 hầm mỏ (path1)
     ],
-    seed: 3016, decorCount: 36, sheepCount: 0, obstacleCount: 9,
+    seed: 3016, decorCount: 56, sheepCount: 1, obstacleCount: 9,
     extraDecor: [
-      { img: 'blueTower', sx: 0, sy: 0, sw: 128, sh: 256, x: 900, y: 200, dw: 26, dh: 52 },
-      { img: 'blueTower', sx: 0, sy: 0, sw: 128, sh: 256, x: 930, y: 380, dw: 26, dh: 52 },
+      { img: 'blueTower', sx: 0, sy: 0, sw: 128, sh: 256, x: 750, y: 150, dw: 30, dh: 60 },
+      { img: 'blueTower', sx: 0, sy: 0, sw: 128, sh: 256, x: 750, y: 420, dw: 30, dh: 60 },
+      { img: 'blueTower', sx: 0, sy: 0, sw: 128, sh: 256, x: 320, y: 280, dw: 28, dh: 56 },
     ],
     waves: [
       [{ type: 'normal', count: 8,  interval: 0.8,  delay: 0,   path: 0 }],

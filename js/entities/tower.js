@@ -387,11 +387,23 @@ class Tower {
 
   // ---------------- Vẽ ----------------
   draw(ctx) {
-    if (this.selected && this.type !== 'barracks') {
+    if (this.selected) {
+      const isSquare = (this.type === 'barracks' || this.type === 'artillery');
       ctx.save();
-      ctx.strokeStyle = 'rgba(255,255,255,0.35)';
-      ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.arc(this.x, this.y, this.range, 0, Math.PI * 2); ctx.stroke();
+      // Vòng bảo vệ chân tháp (vuông cho Barracks/Artillery, tròn cho Archer/Mage)
+      ctx.strokeStyle = 'rgba(255,220,120,0.85)';
+      ctx.lineWidth = 2;
+      if (isSquare) {
+        ctx.beginPath(); ctx.roundRect(this.x - 34, this.y - 34, 68, 68, 10); ctx.stroke();
+      } else {
+        ctx.beginPath(); ctx.arc(this.x, this.y, 34, 0, Math.PI * 2); ctx.stroke();
+      }
+
+      if (this.type !== 'barracks') {
+        ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.arc(this.x, this.y, this.range, 0, Math.PI * 2); ctx.stroke();
+      }
       ctx.restore();
     }
     if (this.type === 'barracks' && this.rallyPoint) {
@@ -415,8 +427,6 @@ class Tower {
       const targetH = targetW * (img.height / img.width);
       const topY = this.y - targetH + 10;
       ctx.save();
-      ctx.fillStyle = 'rgba(0,0,0,0.25)';
-      ctx.beginPath(); ctx.ellipse(this.x, this.y + 6, targetW * 0.38, targetW * 0.16, 0, 0, Math.PI * 2); ctx.fill();
       // Đang xây: hiện giàn giáo gỗ thật (Tiny Swords Update 010) thay vì chỉ giảm
       // alpha thân tháp hoàn chỉnh — mỗi ảnh giữ đúng tỉ lệ khung hình riêng của nó
       // (không ép theo tỉ lệ thân tháp hoàn chỉnh, tránh méo hình).

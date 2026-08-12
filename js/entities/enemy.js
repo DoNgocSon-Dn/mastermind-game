@@ -367,16 +367,6 @@ class Enemy {
     // quái trông như vừa nhảy/rơi xuống điểm spawn, không phải hiện ra tức thì.
     const dropping = this.spawnDropTimer > 0;
     const dropT = dropping ? this.spawnDropTimer / this.spawnDropDuration : 0;
-    if (dropping) {
-      const shadowScale = 1 - dropT;
-      ctx.save();
-      ctx.globalAlpha = 0.4 * shadowScale;
-      ctx.fillStyle = '#000';
-      ctx.beginPath();
-      ctx.ellipse(this.x, this.y, this.radius * 0.75 * shadowScale, this.radius * 0.3 * shadowScale, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-    }
 
     ctx.save();
     ctx.globalAlpha = dropping ? Math.min(1, (1 - dropT) * 1.6 + 0.25) : 1;
@@ -410,9 +400,9 @@ class Enemy {
       return;
     }
 
+    if (!dropping && !this.isFlying) this._drawGroundShadow(ctx);
     const drawn = this._drawSprite(ctx);
     if (!drawn) {
-      // TODO: thay bằng sprite thật khi có asset (fallback hình học)
       ctx.fillStyle = this._fallbackColor();
       ctx.beginPath(); ctx.arc(0, 0, this.radius, 0, Math.PI * 2); ctx.fill();
       ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.stroke();
@@ -423,7 +413,7 @@ class Enemy {
     }
     ctx.restore();
 
-    if (dropping) return; // đang rơi: bỏ thanh máu/bóng bay/icon trạng thái cho gọn
+    if (dropping) return;
     if (this.isFlying) this._drawFlyingShadow(ctx);
     this._drawHpBar(ctx);
     if (this.isRooted) this._drawStatusIcon(ctx, '🧊');
@@ -507,15 +497,9 @@ class Enemy {
     return true;
   }
 
-  _drawFlyingShadow(ctx) {
-    ctx.save();
-    ctx.globalAlpha = 0.25;
-    ctx.fillStyle = '#000';
-    ctx.beginPath();
-    ctx.ellipse(this.x, this.y + this.radius + 4, this.radius * 0.7, this.radius * 0.25, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-  }
+  _drawGroundShadow(ctx) {}
+
+  _drawFlyingShadow(ctx) {}
 
   _drawHpBar(ctx) {
     const w = this.isBoss ? 44 : 24;

@@ -199,39 +199,56 @@ const CONFIG = {
   // Mỗi hero: chỉ số nền + 1 passive (luôn bật) + 1 active skill (phím Q / nút HUD).
   heroTypes: {
     archer: {
-      label: 'Cung Thủ', desc: 'Sát thương tầm xa + chí mạng, né đòn bằng Mưa Tên.',
+      label: 'Cung Thủ',
+      badge: 'Xạ Thủ Tầm Xa',
+      desc: 'Bắn nhanh từ khoảng cách xa, chí mạng cực cao và xả bão tên diệt quái.',
       hp: 220, speed: 118, attackRange: 150, attackDamage: 16, attackRate: 0.55,
       damageType: 'physical', respawnTime: 15, ranged: true, projectileSpeed: 480,
       spriteIdle: 'heroArcherIdle', spriteRun: 'heroArcherIdle', spriteAttack: 'heroArcherShoot', frame: 192,
-      // Hawk Eye: +tầm đánh (đã cộng thẳng vào attackRange ở trên) + tỉ lệ chí mạng x2 dmg.
-      passive: { name: 'Mắt Diều Hâu', critChance: 0.25, critMult: 2.0 },
+      passive: {
+        name: 'Mắt Diều Hâu',
+        desc: 'Tăng +25% Tỉ lệ Chí Mạng và x2.0 Sát Thương khi bắn chí mạng.',
+        critChance: 0.25, critMult: 2.0
+      },
       skill: {
         id: 'volley', name: 'Mưa Tên', key: 'Q', cooldown: 9,
+        desc: 'Lộn né đòn 60px và bắn rải 10 mũi tên liên tiếp vào vùng chọn (18 ST/mũi).',
         dodgeDist: 60, radius: 72, arrows: 10, arrowDelay: 0.05, damage: 18,
       },
     },
     spear: {
-      label: 'Lính Giáo', desc: 'Tầm đánh xa hơn lính thường, lao xuyên phá đội hình địch.',
+      label: 'Lính Giáo',
+      badge: 'Tiền Tuyến Xuyên Phá',
+      desc: 'Tầm đâm xa vượt trội, khả năng lướt càn quét và làm choáng diện rộng.',
       hp: 320, speed: 116, attackRange: 68, attackDamage: 24, attackRate: 0.75,
       damageType: 'physical', respawnTime: 15, ranged: false,
       spriteIdle: 'heroSpearIdle', spriteRun: 'heroSpearRun', spriteAttack: 'heroSpearIdle', frame: 320,
-      // Reach Advantage: tầm đánh (68) đã dài hơn hẳn cận chiến thường (46 của Tank).
-      passive: { name: 'Tầm Với', trailColor: '#bfe8ff' },
+      passive: {
+        name: 'Mũi Giáo Xuyên Phá',
+        desc: 'Tầm đâm xa (68px), đánh trúng nhiều quái vật đứng theo hàng trên đường.',
+        trailColor: '#bfe8ff'
+      },
       skill: {
         id: 'piercingRush', name: 'Cú Đâm Xuyên Phá', key: 'Q', cooldown: 8,
+        desc: 'Lao tới 150px đâm xuyên đội hình, gây 45 ST, choáng 1.2s và đẩy lùi quái.',
         dashDist: 150, dashDuration: 0.22, width: 34, damage: 45, stunDuration: 1.2, knockback: 26,
       },
     },
     tank: {
-      label: 'Khiên & Kiếm', desc: 'Trâu bò, toả hào quang buff phòng thủ lính đứng gần.',
+      label: 'Khiên & Kiếm',
+      badge: 'Đỡ Đòn & Hào Quang',
+      desc: 'Máu trâu kiên cố, khả năng tự hồi máu và tỏa hào quang tăng giáp cho lính.',
       hp: 380, speed: 105, attackRange: 46, attackDamage: 22, attackRate: 0.7,
       damageType: 'physical', respawnTime: 15, ranged: false,
       spriteIdle: 'heroIdle', spriteRun: 'heroRun', spriteAttack: 'heroAttack', frame: 192,
-      // Citadel Wall: lính Doanh Trại đứng trong bán kính quanh Hero "trâu" hẳn lên
-      // (armor cộng thêm + tự hồi máu nhẹ) và phát sáng vàng — xem soldier.js.
-      passive: { name: 'Thành Trì', aura: { radius: 95, armorBonus: 0.3, regenPerSec: 6 } },
+      passive: {
+        name: 'Thành Trì Kiên Cố',
+        desc: 'Hào quang 95px: Tăng +30% Giáp và tự hồi 6 HP/s cho lính xung quanh.',
+        aura: { radius: 95, armorBonus: 0.3, regenPerSec: 6 }
+      },
       skill: {
         id: 'battleCry', name: 'Tiếng Hét Khích Lệ', key: 'Q', cooldown: 12,
+        desc: 'Hú vang khích lệ (110px): Tăng +50% Tốc đánh & +30% ST cho đồng đội trong 6s.',
         radius: 110, atkRateMult: 1.5, dmgMult: 1.3, duration: 6,
       },
     },

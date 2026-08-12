@@ -337,11 +337,19 @@ const HUD = (() => {
     if (sig !== _lastPanelSig) {
       _lastPanelSig = sig;
 
-      // Neo mép ĐÁY-GIỮA của thanh vào 1 điểm phía trên nóc tháp (CSS transform:
-      // translate(-50%,-100%) đặt bên style.css) — kẹp lại gần mép canvas để thanh
-      // không bao giờ bị cắt/lòi ra ngoài khung 960x600 dù tháp đứng sát biên.
-      const ax = Math.min(Math.max(tower.x, 40), CANVAS_W - 40);
-      const ay = Math.min(Math.max(tower.y - 58, 26), CANVAS_H - 20);
+      // Neo mép ĐÁY-GIỮA (hoặc ĐỈNH-GIỮA khi ở sát trên) vào tháp. Kẹp ax [110..850] để
+      // thanh 200px không bao giờ bị cắt ở mép trái/phải màn hình. Nếu tháp sát trên (y < 100),
+      // lật thanh xuống bên DƯỚI tháp để không bị che lấp.
+      const isTop = tower.y < 100;
+      const ax = Math.min(Math.max(tower.x, 115), CANVAS_W - 115);
+      let ay;
+      if (isTop) {
+        ay = Math.min(tower.y + 45, CANVAS_H - 50);
+        els.towerPanel.classList.add('below');
+      } else {
+        ay = Math.max(tower.y - 50, 50);
+        els.towerPanel.classList.remove('below');
+      }
       els.towerPanel.style.left = ax + 'px';
       els.towerPanel.style.top = ay + 'px';
 

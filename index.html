@@ -44,6 +44,7 @@
     <h1>MasterMind</h1>
     <div class="subtitle">Tower Defense Pixel 2D</div>
     <button class="menu-btn" id="btn-play">▶ Chơi</button>
+    <button class="menu-btn secondary hidden" id="btn-mapeditor-menu">🛠️ Tự Làm Map</button>
     <button class="menu-btn secondary" id="btn-settings"><span class="icon-inline gear"></span> Cài đặt</button>
     <div id="settings-panel" class="hidden">
       <label><input type="checkbox" id="chk-mute"> Tắt âm thanh</label>
@@ -67,13 +68,78 @@
       <div class="cloud cloud-3"></div>
       <div class="cloud cloud-4"></div>
     </div>
+    <div class="ground-decor ground-decor-left">
+      <div class="gd-item gd-tree-tall"></div>
+      <div class="gd-item gd-tree-round"></div>
+      <div class="gd-item gd-rock"></div>
+    </div>
     <div class="ground-decor ground-decor-right">
-      <div class="gd-item gd-tree"></div>
+      <div class="gd-item gd-tree-tall"></div>
+      <div class="gd-item gd-tree-round"></div>
+      <div class="gd-item gd-sheep"></div>
       <div class="gd-item gd-rock"></div>
     </div>
     <button class="menu-btn secondary btn-compact" id="back-to-menu">← Menu</button>
+    <button class="menu-btn secondary btn-compact hidden" id="btn-mapeditor-select">🛠️ Tự Làm Map</button>
     <h2>Chọn Màn Chơi</h2>
     <div id="level-list"></div>
+  </div>
+
+  <!-- Map Editor Screen -->
+  <div id="screen-mapeditor" class="screen hidden">
+    <div class="editor-toolbar">
+      <div class="ed-group">
+        <button class="menu-btn secondary btn-compact" id="btn-editor-back">← Thoát</button>
+        <input type="text" id="ed-name" value="Bản Đồ Tự Tạo" placeholder="Tên Map..." class="ed-input">
+      </div>
+      <div class="ed-group">
+        <label>Chủ đề:
+          <select id="ed-theme" class="ed-select">
+            <option value="spring">🌸 Mùa Xuân</option>
+            <option value="summer">☀️ Mùa Hạ</option>
+            <option value="autumn">🍂 Mùa Thu</option>
+            <option value="winter">❄️ Mùa Đông</option>
+            <option value="volcano">🌋 Núi Lửa</option>
+          </select>
+        </label>
+        <label>Đợt quái:
+          <select id="ed-waves" class="ed-select">
+            <option value="6">6 Waves</option>
+            <option value="8">8 Waves</option>
+            <option value="10" selected>10 Waves</option>
+            <option value="12">12 Waves</option>
+            <option value="15">15 Waves</option>
+            <option value="20">20 Waves</option>
+          </select>
+        </label>
+        <label>Trùm:
+          <select id="ed-boss" class="ed-select">
+            <option value="bossSpring">🌸 Boss Xuân</option>
+            <option value="bossSummer">☀️ Boss Hạ</option>
+            <option value="bossAutumn">🍂 Boss Thu</option>
+            <option value="bossWinter">❄️ Boss Đông</option>
+          </select>
+        </label>
+      </div>
+      <div class="ed-group">
+        <button class="ed-tool-btn active" id="tool-path1">🛤️ Đường 1</button>
+        <button class="ed-tool-btn" id="tool-path2">🛤️ Đường 2</button>
+        <button class="ed-tool-btn" id="tool-tree">🌲 Cây</button>
+        <button class="ed-tool-btn" id="tool-rock">🪨 Đá</button>
+        <button class="ed-tool-btn" id="tool-house">🏚️ Nhà</button>
+        <button class="ed-tool-btn danger" id="tool-erase">🧹 Xóa</button>
+      </div>
+      <div class="ed-group">
+        <button class="menu-btn secondary btn-compact" id="btn-undo-p1">↩️ Lùi Đ1</button>
+        <button class="menu-btn secondary btn-compact" id="btn-undo-p2">↩️ Lùi Đ2</button>
+        <button class="menu-btn secondary btn-compact danger" id="btn-editor-clear">🗑️ Xóa Sạch</button>
+        <button class="menu-btn secondary btn-compact" id="btn-editor-save">💾 Lưu</button>
+        <button class="menu-btn primary btn-compact" id="btn-editor-play">▶️ Chơi Thử</button>
+      </div>
+    </div>
+    <div class="editor-canvas-wrap">
+      <canvas id="editorCanvas" width="960" height="600"></canvas>
+    </div>
   </div>
 
   <!-- Hero Select — hiện sau khi chọn map, trước khi vào trận -->
@@ -204,6 +270,7 @@
 <script src="js/ui/menu.js"></script>
 <script src="js/ui/heroselect.js"></script>
 <script src="js/ui/hud.js"></script>
+<script src="js/ui/mapeditor.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>

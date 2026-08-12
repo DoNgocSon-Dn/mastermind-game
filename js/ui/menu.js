@@ -33,28 +33,44 @@ const MenuUI = (() => {
     document.addEventListener('pointerdown', () => MusicPlayer.start(), { once: true });
     document.addEventListener('keydown', () => MusicPlayer.start(), { once: true });
 
+    const handleMapEditorClick = () => {
+      const isUnlocked = typeof SaveSystem !== 'undefined' && typeof MAPS !== 'undefined' && SaveSystem.isGameCompleted(MAPS.length);
+      if (isUnlocked) {
+        AssetLoader.playSound('select');
+        MapEditorUI.show();
+      }
+    };
+
+    const btnMenuEd = document.getElementById('btn-mapeditor-menu');
+    if (btnMenuEd) btnMenuEd.onclick = handleMapEditorClick;
+
+    const btnSelEd = document.getElementById('btn-mapeditor-select');
+    if (btnSelEd) btnSelEd.onclick = handleMapEditorClick;
+
     els.chkDevMode.checked = DevMode.enabled;
-    els.chkDevMode.onchange = (e) => { DevMode.set(e.target.checked); renderLevelList(); };
+    els.chkDevMode.onchange = (e) => {
+      DevMode.set(e.target.checked);
+      renderLevelList();
+      updateMapEditorButtonsVisibility();
+    };
     _initDevModeUnlock();
 
     onSelectLevel = onLevelSelected;
   }
 
-  // Ô Dev Mode trong Cài đặt mặc định ẨN — chỉ hiện ra sau khi gõ 3 lần liên tiếp
-  // ký tự "@" (không xen phím nào khác ở giữa). Mục đích chỉ là tránh người chơi
-  // thường bấm nhầm vào cheat vàng vô hạn/mở hết map, KHÔNG phải bảo mật thật sự.
+  function updateMapEditorButtonsVisibility() {
+    const isUnlocked = typeof SaveSystem !== 'undefined' && typeof MAPS !== 'undefined' && Array.isArray(MAPS) && SaveSystem.isGameCompleted(MAPS.length);
+    const btnMenuEd = document.getElementById('btn-mapeditor-menu');
+    const btnSelEd = document.getElementById('btn-mapeditor-select');
+    if (btnMenuEd) btnMenuEd.classList.toggle('hidden', !isUnlocked);
+    if (btnSelEd) btnSelEd.classList.toggle('hidden', !isUnlocked);
+  }
+
   function _initDevModeUnlock() {
     let streak = 0;
     const MODIFIER_KEYS = ['Shift', 'Control', 'Alt', 'AltGraph', 'Meta'];
     window.addEventListener('keydown', (e) => {
-      // Gõ "@" luôn cần giữ Shift (hoặc AltGr) — mỗi lần nhấn/thả phím bổ trợ đó
-      // giữa 2 lần gõ "@" cũng bắn ra 1 sự kiện keydown riêng, nếu tính cả vào thì
-      // chuỗi gần như không bao giờ đếm đủ 3 lần liên tiếp. Bỏ qua các phím bổ trợ,
-      // chỉ tính streak theo phím "thật".
       if (MODIFIER_KEYS.includes(e.key)) return;
-      // e.repeat: giữ phím hơi lâu là trình duyệt tự bắn liên tiếp nhiều keydown cho
-      // ĐÚNG 1 lần bấm vật lý — nếu tính cả thì chỉ cần lỡ tay giữ "@" hơi lâu 1 lần
-      // là đủ đếm thành 3, tự lộ ra dù người chơi không cố ý gõ 3 lần.
       if (e.repeat) return;
       streak = e.key === '@' ? streak + 1 : 0;
       if (streak >= 3) {
@@ -62,6 +78,7 @@ const MenuUI = (() => {
         if (els.devModeRow.classList.contains('hidden')) {
           els.devModeRow.classList.remove('hidden');
           AssetLoader.playSound('select');
+          updateMapEditorButtonsVisibility();
         }
       }
     });
@@ -72,6 +89,7 @@ const MenuUI = (() => {
     els.levelSelect.classList.add('hidden');
     document.getElementById('game-container').classList.add('hidden');
     if (window.__setPlayingChrome) window.__setPlayingChrome(false);
+    updateMapEditorButtonsVisibility();
   }
 
   function showLevelSelect() {
@@ -80,33 +98,34 @@ const MenuUI = (() => {
     document.getElementById('game-container').classList.add('hidden');
     if (window.__setPlayingChrome) window.__setPlayingChrome(false);
     renderLevelList();
-    // Tự cuộn ngang tới map đã mở gần nhất, để không phải kéo lại từ đầu mỗi lần vào.
+    updateMapEditorButtonsVisibility();
     const cards = els.levelList.querySelectorAll('.level-card:not(.locked)');
     const lastUnlocked = cards[cards.length - 1];
     if (lastUnlocked) lastUnlocked.scrollIntoView({ inline: 'center', block: 'nearest' });
   }
 
-  // 1 hàng ngang duy nhất, 16 map đúng thứ tự 1→16 (cuộn ngang) — mỗi thẻ có badge
-  // số thứ tự + icon mùa nhỏ ở góc để vẫn nhận ra map thuộc mùa nào dù không còn
-  // tiêu đề mùa tách hàng như bản trước.
   function renderLevelList() {
-    const save = SaveSystem.load(MAPS.length);
+    updateMapEditorButtonsVisibility();
+    const officialMaps = MAPS.slice(0, 16);
+    const save = SaveSystem.load(16);
     els.levelList.innerHTML = '';
     const seasonCounts = new Map();
-    MAPS.forEach((map) => {
+    officialMaps.forEach((map) => {
+      if (!map) return;
       const key = map.season || map.theme;
       seasonCounts.set(key, (seasonCounts.get(key) || 0) + 1);
     });
     const seenPerSeason = new Map();
 
-    MAPS.forEach((map, i) => {
+    officialMaps.forEach((map, i) => {
+      if (!map) return;
       const key = map.season || map.theme;
       const info = SEASON_INFO[key] || { icon: '🗺', name: key };
       const seenSoFar = (seenPerSeason.get(key) || 0) + 1;
       seenPerSeason.set(key, seenSoFar);
       const isBossMap = seenSoFar === seasonCounts.get(key);
 
-      const entry = save.maps[i];
+      const entry = (save.maps && save.maps[i]) ? save.maps[i] : { unlocked: i === 0, stars: 0 };
       const card = document.createElement('div');
       card.className = `level-card theme-${map.theme}` + (entry.unlocked ? '' : ' locked') + (isBossMap ? ' boss-map' : '');
       const thumbIcon = isBossMap ? '👑' : info.icon;

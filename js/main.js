@@ -263,21 +263,62 @@
   // khi click, không phải bấm thử rồi mới nghe tiếng lỗi.
   function drawBuildPreview() {
     const valid = game.map.isBuildable(mouseX, mouseY, game.towers);
-    const cfg = CONFIG.towers[game.armedTowerType];
+    const type = game.armedTowerType;
+    const cfg = CONFIG.towers[type];
+    const isSquare = (type === 'barracks' || type === 'artillery');
+
+    const size = 68; // Bán kính chân tháp 68px (34px bán kính)
+    const half = size / 2;
+
     ctx.save();
-    ctx.globalAlpha = 0.55;
+    ctx.globalAlpha = 0.5;
     ctx.fillStyle = valid ? '#7fff9a' : '#ff6a6a';
-    ctx.beginPath(); ctx.arc(mouseX, mouseY, 20, 0, Math.PI * 2); ctx.fill();
-    ctx.globalAlpha = 0.85;
-    ctx.strokeStyle = valid ? '#3fdc6a' : '#dc3f3f';
-    ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.arc(mouseX, mouseY, 20, 0, Math.PI * 2); ctx.stroke();
-    if (cfg.levels[0].range) {
-      ctx.globalAlpha = 0.3;
-      ctx.strokeStyle = '#fff';
-      ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.arc(mouseX, mouseY, cfg.levels[0].range, 0, Math.PI * 2); ctx.stroke();
+
+    if (isSquare) {
+      ctx.beginPath();
+      ctx.roundRect(mouseX - half, mouseY - half, size, size, 10);
+      ctx.fill();
+    } else {
+      ctx.beginPath();
+      ctx.arc(mouseX, mouseY, half, 0, Math.PI * 2);
+      ctx.fill();
     }
+
+    ctx.globalAlpha = 0.9;
+    ctx.strokeStyle = valid ? '#3fdc6a' : '#dc3f3f';
+    ctx.lineWidth = 2.5;
+
+    if (isSquare) {
+      ctx.beginPath();
+      ctx.roundRect(mouseX - half, mouseY - half, size, size, 10);
+      ctx.stroke();
+    } else {
+      ctx.beginPath();
+      ctx.arc(mouseX, mouseY, half, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // Hiển thị ảnh bóng ghost của tháp chuẩn bị đặt
+    const typeMap = { archer: 'blueArchery', barracks: 'blueBarracks', mage: 'blueMonastery', artillery: 'blueTower' };
+    const imgKey = typeMap[type] || 'blueTower';
+    const img = AssetLoader.getImage(imgKey);
+    if (img) {
+      ctx.globalAlpha = 0.5;
+      const targetW = 62;
+      const targetH = targetW * (img.height / img.width);
+      ctx.drawImage(img, mouseX - targetW / 2, mouseY - targetH + 10, targetW, targetH);
+    }
+
+    // Vòng tròn hiển thị tầm bắn
+    if (cfg.levels[0].range) {
+      ctx.globalAlpha = 0.35;
+      ctx.strokeStyle = valid ? '#ffffff' : '#ff6a6a';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(mouseX, mouseY, cfg.levels[0].range, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
     ctx.restore();
   }
 
@@ -326,15 +367,19 @@
   function tryClearObstacle(ob) {
     if (!game.economy.spend(ob.cost)) { AssetLoader.playSound('error'); return; }
     ob.cleared = true;
-    AssetLoader.playSound('build', { volume: 0.5 });
+    AssetLoader.playSound('build', { volume: 0.7 });
+    game.damageTexts.push(new DamageText(ob.x, ob.y - ob.dh * 0.5, `-${ob.cost}g`, '#ff6a6a'));
+    if (typeof SpriteFX !== 'undefined') SpriteFX.burstDust(game, ob.x, ob.y - 10);
   }
 
   // Tài nguyên trang trí (cây/đá/bụi/nhà/điểm nhấn) — y hệt vật cản: bấm vào là
-  // DỌN NGAY nếu đủ tiền, chỉ TRỪ tiền, không có thưởng gì cả.
+  // DỌN NGAY nếu đủ tiền, trừ tiền và mở ô đất để xây tháp.
   function tryClearResource(res) {
     if (!game.economy.spend(res.cost)) { AssetLoader.playSound('error'); return; }
     game.map.clearResource(res);
-    AssetLoader.playSound('build', { volume: 0.5 });
+    AssetLoader.playSound('build', { volume: 0.7 });
+    game.damageTexts.push(new DamageText(res.x, res.y - (res.dh || 30) * 0.5, `-${res.cost}g`, '#ff6a6a'));
+    if (typeof SpriteFX !== 'undefined') SpriteFX.burstDust(game, res.x, res.y - 10);
   }
 
   canvas.addEventListener('mousemove', (e) => {
@@ -499,7 +544,8 @@
 
   // ---------------- Wiring UI <-> State machine ----------------
   function startLevel(mapIndex, heroType) {
-    const mapName = MAPS[mapIndex].name;
+    const targetMap = MAPS[mapIndex] || MAPS[0];
+    const mapName = targetMap ? targetMap.name : 'Bản Đồ';
     showLoadingScreen(`Đang vào trận — ${mapName}`, { autoFill: true });
     // Không có tài nguyên thật để chờ (map/hero dựng tức thời) — trễ giả 0.7s để
     // kịp thấy màn chuyển cảnh thay vì chớp tắt ngay, đồng bộ với animation thanh chạy.
@@ -585,6 +631,13 @@
   HeroSelectUI.init({
     onHeroChosen: (mapIndex, heroType) => startLevel(mapIndex, heroType),
     onBackToLevels: () => { HeroSelectUI.hide(); MenuUI.showLevelSelect(); },
+  });
+
+  MapEditorUI.init({
+    onPlayCustom: (customMapDef) => {
+      MAPS[99] = customMapDef;
+      HeroSelectUI.show(99);
+    },
   });
 
   // ---------------- Boot ----------------

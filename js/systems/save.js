@@ -35,8 +35,10 @@ const SaveSystem = (() => {
       const raw = localStorage.getItem(KEY);
       if (!raw) return defaultData(mapCount);
       const parsed = JSON.parse(raw);
-      if (!parsed.maps || parsed.maps.length !== mapCount) return defaultData(mapCount);
-      return parsed;
+      if (!parsed.maps || !Array.isArray(parsed.maps)) return defaultData(mapCount);
+      const maps = parsed.maps.slice(0, mapCount);
+      while (maps.length < mapCount) maps.push({ unlocked: maps.length === 0, stars: 0 });
+      return { maps };
     } catch (e) {
       return defaultData(mapCount);
     }
@@ -57,6 +59,7 @@ const SaveSystem = (() => {
   }
 
   function reportResult(mapCount, mapIndex, stars) {
+    if (mapIndex >= 16) return;
     const data = _loadRaw(mapCount);
     if (stars > (data.maps[mapIndex].stars || 0)) data.maps[mapIndex].stars = stars;
     if (mapIndex + 1 < mapCount) data.maps[mapIndex + 1].unlocked = true;
@@ -64,5 +67,11 @@ const SaveSystem = (() => {
     return data;
   }
 
-  return { load, save, reportResult, get usingMemory() { return useMemory; } };
+  function isGameCompleted(mapCount) {
+    if (typeof DevMode !== 'undefined' && DevMode.enabled) return true;
+    const data = _loadRaw(mapCount);
+    return !!(data.maps && data.maps[mapCount - 1] && data.maps[mapCount - 1].stars > 0);
+  }
+
+  return { load, save, reportResult, isGameCompleted, get usingMemory() { return useMemory; } };
 })();

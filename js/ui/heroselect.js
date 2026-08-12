@@ -38,12 +38,36 @@ const HeroSelectUI = (() => {
       const card = document.createElement('div');
       card.className = `hero-card hero-${type}`;
       card.innerHTML = `
-        <div class="hero-icon ${HERO_SPRITE_CLASS[type] || ''}"></div>
-        <div class="hero-name">${cfg.label}</div>
+        <div class="hero-header">
+          <div class="hero-icon ${HERO_SPRITE_CLASS[type] || ''}"></div>
+          <div class="hero-title-box">
+            <div class="hero-name">${cfg.label}</div>
+            <div class="hero-badge">${cfg.badge || ''}</div>
+          </div>
+        </div>
         <div class="hero-desc">${cfg.desc}</div>
-        <div class="hero-passive"><span class="tag">Nội tại</span> ${cfg.passive.name}</div>
-        <div class="hero-skill"><span class="tag">Chủ động</span> ${cfg.skill.name}</div>
-        <button class="menu-btn btn-compact hero-pick">Chọn</button>
+        <div class="hero-stats">
+          <div class="stat-item" title="Máu tối đa"><span class="stat-ico">❤️</span> <span class="stat-val">${cfg.hp} HP</span></div>
+          <div class="stat-item" title="Sát thương"><span class="stat-ico">⚔️</span> <span class="stat-val">${cfg.attackDamage} ST</span></div>
+          <div class="stat-item" title="Tầm đánh"><span class="stat-ico">🎯</span> <span class="stat-val">${cfg.attackRange}px</span></div>
+          <div class="stat-item" title="Tốc độ bắn/chém"><span class="stat-ico">⚡</span> <span class="stat-val">${cfg.attackRate}s</span></div>
+        </div>
+        <div class="hero-passive">
+          <div class="skill-header">
+            <span class="tag tag-passive">Nội tại</span>
+            <span class="skill-title">${cfg.passive.name}</span>
+          </div>
+          <div class="skill-desc">${cfg.passive.desc || ''}</div>
+        </div>
+        <div class="hero-skill">
+          <div class="skill-header">
+            <span class="tag tag-active">Chiêu [Q]</span>
+            <span class="skill-title">${cfg.skill.name}</span>
+            <span class="skill-cd">⏳ ${cfg.skill.cooldown}s</span>
+          </div>
+          <div class="skill-desc">${cfg.skill.desc || ''}</div>
+        </div>
+        <button class="menu-btn btn-compact hero-pick">▶ Chọn Tướng</button>
       `;
       card.querySelector('.hero-pick').onclick = () => {
         AssetLoader.playSound('select');
