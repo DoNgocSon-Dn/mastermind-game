@@ -283,4 +283,43 @@ const CONFIG = {
     crit: '#ffd23f',
     heal: '#5cff8a',
   },
+
+  // ---------------- Thông báo cơ chế mới theo map ----------------
+  // Key = map id (map.js MAPS[i].id). Hiện đúng 1 lần mỗi khi VÀO map đó (mỗi lần
+  // chơi lại vẫn hiện lại) trừ khi người chơi tick "Không hiện lại" (xem
+  // ui/guide.js + systems/tutorial.js). Chỉ gắn ở map thật sự đổi luật chơi.
+  mechanicIntros: {
+    1: {
+      title: 'Cơ Chế Mới: Quái Phân Thân',
+      lines: [
+        'Từ màn này, một số đợt sẽ xuất hiện Quái Phân Thân — thân hình to, máu trâu hơn hẳn quái thường.',
+        'Khi đi được nửa đường, nó sẽ TỰ TÁCH thành 3 quái nhỏ toả ra 3 hướng rồi tiếp tục lao vào thành.',
+        'Chuẩn bị hỏa lực diện rộng (tháp AoE) quanh khu vực giữa đường để dọn gọn cả 3 con cùng lúc.',
+      ],
+    },
+    4: {
+      title: 'Cơ Chế Mới: Tấn Công Nhiều Hướng',
+      lines: [
+        'Từ màn này, quái sẽ đổ bộ từ NHIỀU cổng ra quân cùng lúc thay vì chỉ 1 hướng.',
+        'Các luồng quái sẽ chia nhánh rồi hội tụ lại tại một điểm trước khi đánh thẳng vào thành.',
+        'Hãy bố trí tháp ngay tại những "nút thắt" nơi các luồng quái gặp nhau để tối ưu hỏa lực.',
+      ],
+    },
+    8: {
+      title: 'Cơ Chế Mới: Hầm Bí Mật',
+      lines: [
+        'Từ màn này, một số quái sẽ chui vào hầm bí mật giữa đường, biến mất khỏi tầm bắn.',
+        'Chúng sẽ bất ngờ chui lên ở một vị trí khác gần cuối đường, rút ngắn quãng đường bị tháp bắn.',
+        'Chú ý các cổng hầm phát sáng trên bản đồ và bố trí thêm hỏa lực gần khu vực cổng ra.',
+      ],
+    },
+    10: {
+      title: 'Cơ Chế Mới: Đường Luân Phiên Đóng/Mở',
+      lines: [
+        'Từ màn này, không phải lúc nào cả 2 hướng đường cũng cùng mở.',
+        'Mỗi đợt chỉ MỘT hướng được quái sử dụng, luân phiên qua lại giữa các đợt.',
+        'Quan sát cổng nào đang mở (xem hiệu ứng tại cổng) trước khi dồn hết tháp vào 1 phía.',
+      ],
+    },
+  },
 };

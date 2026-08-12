@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Thủ Thành — Tower Defense Pixel</title>
-<link rel="stylesheet" href="css/style.css?v=13">
+<link rel="stylesheet" href="css/style.css?v=15">
 </head>
 <body>
 <!--
@@ -237,6 +237,17 @@
         <button class="menu-btn secondary" id="btn-result-menu">Về Level Select</button>
       </div>
     </div>
+
+    <!-- Bảng chỉ dẫn chung (đầu game) / thông báo cơ chế mới theo map — dùng
+         chung 1 khung, nội dung đổi động qua GuideUI (js/ui/guide.js). -->
+    <div id="overlay-info" class="hidden">
+      <div class="info-panel">
+        <h2 id="info-title"></h2>
+        <div id="info-body"></div>
+        <label class="info-checkbox"><input type="checkbox" id="info-dontshow"> <span id="info-checkbox-label"></span></label>
+        <button class="menu-btn btn-compact" id="btn-info-close">Đã hiểu</button>
+      </div>
+    </div>
   </div>
 
 </div><!-- /#app -->
@@ -265,6 +276,7 @@
 <script src="js/systems/wave.js"></script>
 <script src="js/systems/skills.js"></script>
 <script src="js/systems/save.js"></script>
+<script src="js/systems/tutorial.js"></script>
 <script src="js/entities/projectile.js"></script>
 <script src="js/entities/enemy.js"></script>
 <script src="js/entities/soldier.js"></script>
@@ -275,6 +287,7 @@
 <script src="js/ui/menu.js"></script>
 <script src="js/ui/heroselect.js"></script>
 <script src="js/ui/hud.js"></script>
+<script src="js/ui/guide.js"></script>
 <script src="js/ui/mapeditor.js"></script>
 <script src="js/main.js"></script>
 </body>

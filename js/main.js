@@ -501,8 +501,14 @@
 
   const TOWER_HOTKEYS = ['1', '2', '3', '4'];
   const TOWER_HOTKEY_ORDER = ['archer', 'barracks', 'mage', 'artillery'];
+  function isGuideOpen() {
+    const el = document.getElementById('overlay-info');
+    return el && !el.classList.contains('hidden');
+  }
+
   window.addEventListener('keydown', (e) => {
     if (appState !== STATE.PLAYING || !game) return;
+    if (isGuideOpen()) return;
     if (e.key === 'Escape') { cancelArmedOrPending(); return; }
     const hotkeyIdx = TOWER_HOTKEYS.indexOf(e.key);
     if (hotkeyIdx !== -1) { hudCallbacks.onArmTower(TOWER_HOTKEY_ORDER[hotkeyIdx]); return; }
@@ -579,6 +585,7 @@
       HUD.showPauseOverlay(false);
       deselectTower();
       hideLoadingScreen();
+      GuideUI.showQueue(mapIndex);
     }, LOADING_AUTOFILL_MS);
   }
 
@@ -648,6 +655,7 @@
     onHeroSkill: (key) => game.hero.useSkill(key, game, { x: mouseX, y: mouseY }),
   };
   HUD.init(hudCallbacks);
+  GuideUI.init();
 
   MenuUI.init({
     onPlayClicked: () => { appState = STATE.LEVEL_SELECT; MenuUI.showLevelSelect(); },

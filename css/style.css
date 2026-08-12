@@ -710,6 +710,20 @@ body { display: block; }
   border: 2px solid var(--frame-line);
   border-radius: 10px;
   box-shadow: inset 0 0 0 1px rgba(227,203,154,0.4), 0 3px 8px rgba(0,0,0,0.4);
+  opacity: 0.35;
+  transition: opacity 0.22s ease-in-out;
+}
+#build-menu:hover,
+#build-menu:has(.build-btn.armed) {
+  opacity: 1;
+}
+/* Tooltip của thẻ tháp bị các panel HUD khác (armed-banner, tower-hover-bar,
+   tower-panel...) đè lên vì z-index:20 của tooltip chỉ có tác dụng BÊN TRONG
+   stacking context của #build-menu (z-index:5) — không thắng nổi panel khác
+   có z-index cao hơn 5 ở cấp #app. Nâng hẳn #build-menu lên trên cùng ngay khi
+   đang hover 1 thẻ có tooltip, để tooltip không bao giờ bị che. */
+#build-menu:has(.build-btn[data-tooltip]:hover) {
+  z-index: 100;
 }
 .build-btn {
   width: 52px; height: 46px; padding: 2px;
@@ -758,7 +772,12 @@ body { display: block; }
 .build-btn .tier { display: none; }
 
 /* Tooltip cho thẻ tháp — dùng chung phong cách với tooltip kỹ năng, hiện bên PHẢI
-   thẻ (rail nằm sát mép trái màn hình nên tooltip phải mở ra phía trong). */
+   thẻ (rail nằm sát mép trái màn hình nên tooltip phải mở ra phía trong).
+   4 thẻ xếp sát nhau trong CÙNG 1 hàng ngang (width 52px + gap 4px) nên nếu neo
+   "left: 100%" theo TỪNG thẻ, tooltip của thẻ 1/2/3 sẽ mở đè lên đúng các thẻ
+   3/4 phía sau (chỉ thẻ 4 - thẻ cuối - mới thực sự trống chỗ bên phải). Phải
+   cộng thêm đúng bề rộng của các thẻ CÒN LẠI bên phải (52+4=56px/thẻ) để tooltip
+   của cả 4 thẻ đều mở ra bên phải TOÀN BỘ rail, không đè lên thẻ nào. */
 .build-btn[data-tooltip]:hover::after {
   content: attr(data-tooltip);
   position: absolute; left: calc(100% + 10px); top: 50%; transform: translateY(-50%);
@@ -769,18 +788,9 @@ body { display: block; }
   text-shadow: none; pointer-events: none; z-index: 20;
   box-shadow: 0 4px 8px rgba(0,0,0,0.5);
 }
-.build-btn[data-tooltip]:hover::after {
-  content: attr(data-tooltip);
-  position: absolute; top: calc(100% + 6px); left: 50%; transform: translateX(-50%);
-  background: rgba(30,16,8,0.95); border: 1.5px solid var(--frame-line);
-  color: var(--text-cream); padding: 4px 8px; border-radius: 6px;
-  font-size: 11px; white-space: nowrap; z-index: 20;
-  box-shadow: 0 4px 10px rgba(0,0,0,0.5); pointer-events: none;
-}
-.build-btn[data-tooltip]:hover::before {
-  content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
-  border: 5px solid transparent; border-bottom-color: #6a4a1e; z-index: 20;
-}
+.build-btn:nth-child(1)[data-tooltip]:hover::after { left: calc(100% + 168px + 10px); }
+.build-btn:nth-child(2)[data-tooltip]:hover::after { left: calc(100% + 112px + 10px); }
+.build-btn:nth-child(3)[data-tooltip]:hover::after { left: calc(100% + 56px + 10px); }
 
 /* Global skills + Hero skills — overlay góc dưới phải, có dải nền gradient bán trong
    suốt phía sau (đậm ở đáy, tan dần lên trên) để cụm icon không "nổi trần" trực tiếp
@@ -1050,6 +1060,42 @@ body { display: block; }
 #overlay-result.lose h2 { color: #7a1f1f; text-shadow: 1px 1px 0 rgba(255,255,255,0.4); }
 #overlay-result .stars-big { font-size: 42px; letter-spacing: 8px; color: #ffdc78; margin: 14px 0; }
 #overlay-result .row { display: flex; flex-wrap: wrap; justify-content: center; gap: 14px; margin-top: 18px; max-width: 520px; }
+
+/* Bảng chỉ dẫn chung / thông báo cơ chế mới — nền giấy da (khác #overlay-pause/
+   #overlay-result nền gỗ tối) để phân biệt rõ đây là "thông tin đọc", không phải
+   màn dừng/kết quả trận. */
+#overlay-info {
+  position: absolute; inset: 0; z-index: 25;
+  background: rgba(0,0,0,0.72);
+  display: flex; align-items: center; justify-content: center;
+}
+#overlay-info .info-panel {
+  background: transparent;
+  border: 18px solid transparent;
+  border-image: url('../assets/ui/paper_regular.png') 44 52 45 52 fill;
+  padding: 16px 24px 20px;
+  width: 480px;
+  max-width: 86%;
+  max-height: 82%;
+  color: #3a2a18;
+  display: flex; flex-direction: column; align-items: center;
+  filter: drop-shadow(0 10px 25px rgba(0,0,0,0.65));
+}
+#overlay-info h2 {
+  margin: 0 0 10px; font-size: 19px; text-align: center; color: #6a3f12;
+}
+#overlay-info #info-body {
+  overflow-y: auto; max-height: 300px;
+  font-size: 13px; line-height: 1.55; text-align: left;
+  padding-right: 4px;
+}
+#overlay-info #info-body p { margin: 0 0 9px; }
+#overlay-info #info-body p:last-child { margin-bottom: 0; }
+#overlay-info .info-checkbox {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px; margin: 14px 0 4px; cursor: pointer;
+}
+#overlay-info #btn-info-close { margin-top: 6px; }
 
 #loading-screen {
   position: fixed; inset: 0; background: #14161f; z-index: 999;
