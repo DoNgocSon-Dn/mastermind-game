@@ -219,10 +219,7 @@
     game.map.drawBackground(ctx);
     game.map.drawTunnels(ctx);
     game.map.drawPathGates(ctx, game.waveManager.waveIndex);
-    game.map.drawSpawnAndBase(ctx, {
-      waveReady: canCallWave(),
-      hoverX: mouseX, hoverY: mouseY,
-    });
+    game.map.drawSpawnAndBase(ctx);
 
     // Vẽ tháp/lính/Hero/quái CÙNG cây/bụi/đá/nhà/vật cản theo thứ tự Y (painter's
     // algorithm) để vật ở hàng dưới (y lớn hơn) luôn đè lên vật hàng trên — tránh
@@ -236,6 +233,10 @@
     if (game.hero.alive) layered.push(game.hero);
     layered.sort((a, b) => a.y - b.y);
     for (const ent of layered) ent.draw(ctx);
+
+    // Vẽ SAU CÙNG lớp y-sort ở trên để huy hiệu "Bấm để thả quái" luôn nổi rõ,
+    // không bị tháp/cây/quái đứng gần điểm ra quân che mất (xem map.js:drawWaveReadyBadges).
+    game.map.drawWaveReadyBadges(ctx, { waveReady: canCallWave(), hoverX: mouseX, hoverY: mouseY });
 
     game.map.drawDecorHoverOverlay(ctx, decorUi);
 
@@ -585,7 +586,11 @@
       HUD.showPauseOverlay(false);
       deselectTower();
       hideLoadingScreen();
-      GuideUI.showQueue(mapIndex);
+      // Khoá hẳn mô phỏng (kể cả bộ đếm giờ wave đầu tiên tự bắt đầu sau 2s, xem
+      // systems/wave.js) trong lúc bảng chỉ dẫn/thông báo cơ chế còn hiện — người
+      // chơi bấm đóng hết mới thật sự tính là "vào trận".
+      game.paused = true;
+      GuideUI.showQueue(mapIndex, () => { game.paused = false; });
     }, LOADING_AUTOFILL_MS);
   }
 

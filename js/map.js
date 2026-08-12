@@ -1405,11 +1405,10 @@ class GameMap {
     return this.__gatePillarPos;
   }
 
-  // `ui` (main.js truyền vào): { waveReady, hoverX, hoverY } — waveReady = đang cho phép
-  // gọi đợt kế tiếp, dùng để nhấp nháy nút đầu lâu mời người chơi bấm.
-  drawSpawnAndBase(ctx, ui = {}) {
+  // Trại quái + cọc đầu lâu + 2 tháp cổng thành — thuần trang trí nền, không phụ
+  // thuộc waveReady (xem drawWaveReadyBadges() bên dưới cho phần huy hiệu bấm-được).
+  drawSpawnAndBase(ctx) {
     ctx.save();
-    const now = performance.now();
     const camp = AssetLoader.getImage('goblinCamp');
     const spike = AssetLoader.getImage('skullSpike');
     const btns = this.spawnButtons;
@@ -1441,40 +1440,6 @@ class GameMap {
         ctx.drawImage(camp, b.x - cw / 2, b.y - ch + 16, cw, ch);
       }
       ctx.filter = 'none';
-
-      // Huy hiệu đầu lâu CHỈ hiện khi đang chờ người chơi gọi đợt (waveReady) — bấm
-      // vào là đợt bắt đầu ngay, đầu lâu biến mất theo (ready=false) cho tới khi dọn
-      // sạch quái đợt đó và sẵn sàng đợt kế tiếp mới hiện lại. Trại quái + cọc vẫn
-      // luôn hiện làm "hang ổ" cố định, chỉ riêng huy hiệu là tín hiệu bấm-được.
-      const ready = !!ui.waveReady;
-      if (ready) {
-        const pulse = 0.65 + Math.sin(now / 260) * 0.35;
-        const hovered = ui.hoverX >= 0 && Math.hypot(ui.hoverX - b.x, ui.hoverY - b.y) <= b.r + 4;
-        ctx.globalAlpha = 1;
-        ctx.strokeStyle = `rgba(255,160,60,${0.35 + pulse * 0.5})`;
-        ctx.lineWidth = 3;
-        ctx.beginPath(); ctx.arc(b.x, b.y, b.r + 5 + pulse * 4, 0, Math.PI * 2); ctx.stroke();
-        ctx.fillStyle = hovered ? 'rgba(60,20,14,0.96)' : 'rgba(38,14,10,0.9)';
-        ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2); ctx.fill();
-        ctx.strokeStyle = `rgba(255,${140 + pulse * 80},60,1)`;
-        ctx.lineWidth = 2.5;
-        ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2); ctx.stroke();
-        ctx.font = '19px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-        ctx.fillStyle = '#fff';
-        ctx.fillText('💀', b.x, b.y + 7);
-
-        if (i === 0) {
-          const label = 'Bấm để thả quái';
-          ctx.font = 'bold 11px sans-serif';
-          const w = ctx.measureText(label).width + 14;
-          const ly = b.y + b.r + 16;
-          ctx.fillStyle = 'rgba(38,14,10,0.9)';
-          ctx.beginPath(); ctx.roundRect(b.x - w / 2, ly - 11, w, 16, 5); ctx.fill();
-          ctx.strokeStyle = `rgba(255,170,70,${0.55 + pulse * 0.45})`; ctx.lineWidth = 1.5; ctx.stroke();
-          ctx.fillStyle = '#ffd9a0';
-          ctx.fillText(label, b.x, ly + 1);
-        }
-      }
     });
 
     // 2 toà tháp pháo đài hai bên cổng thành — canh giữ lối vào điểm cuối đường,
@@ -1485,6 +1450,49 @@ class GameMap {
       if (!towerImg) return;
       const dw = 34, dh = dw * (towerImg.height / towerImg.width);
       ctx.drawImage(towerImg, p.x - dw / 2, p.y - dh, dw, dh);
+    });
+    ctx.restore();
+  }
+
+  // Huy hiệu đầu lâu "sẵn sàng gọi đợt" + chữ "Bấm để thả quái" — TÁCH RIÊNG khỏi
+  // drawSpawnAndBase() và gọi SAU CÙNG trong main.js:render() (sau cả lớp y-sort
+  // tháp/lính/quái/cây/đá), để không bao giờ bị tháp/cây/quái đứng gần điểm ra
+  // quân che mất tín hiệu bấm-được này. Trại quái + cọc đầu lâu vẫn ở
+  // drawSpawnAndBase() vì chúng là "phông nền" cố định, hợp lý khi bị che theo
+  // chiều sâu như mọi decor khác.
+  drawWaveReadyBadges(ctx, ui = {}) {
+    if (!ui.waveReady) return;
+    ctx.save();
+    const now = performance.now();
+    const btns = this.spawnButtons;
+    this.paths.forEach((path, i) => {
+      const b = btns[i];
+      const pulse = 0.65 + Math.sin(now / 260) * 0.35;
+      const hovered = ui.hoverX >= 0 && Math.hypot(ui.hoverX - b.x, ui.hoverY - b.y) <= b.r + 4;
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = `rgba(255,160,60,${0.35 + pulse * 0.5})`;
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(b.x, b.y, b.r + 5 + pulse * 4, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = hovered ? 'rgba(60,20,14,0.96)' : 'rgba(38,14,10,0.9)';
+      ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = `rgba(255,${140 + pulse * 80},60,1)`;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2); ctx.stroke();
+      ctx.font = '19px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+      ctx.fillStyle = '#fff';
+      ctx.fillText('💀', b.x, b.y + 7);
+
+      if (i === 0) {
+        const label = 'Bấm để thả quái';
+        ctx.font = 'bold 11px sans-serif';
+        const w = ctx.measureText(label).width + 14;
+        const ly = b.y + b.r + 16;
+        ctx.fillStyle = 'rgba(38,14,10,0.9)';
+        ctx.beginPath(); ctx.roundRect(b.x - w / 2, ly - 11, w, 16, 5); ctx.fill();
+        ctx.strokeStyle = `rgba(255,170,70,${0.55 + pulse * 0.45})`; ctx.lineWidth = 1.5; ctx.stroke();
+        ctx.fillStyle = '#ffd9a0';
+        ctx.fillText(label, b.x, ly + 1);
+      }
     });
     ctx.restore();
   }

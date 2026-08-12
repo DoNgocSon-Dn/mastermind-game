@@ -1081,6 +1081,12 @@ body { display: block; }
   display: flex; flex-direction: column; align-items: center;
   filter: drop-shadow(0 10px 25px rgba(0,0,0,0.65));
 }
+#overlay-info .info-icon {
+  font-size: 40px; line-height: 1; margin-bottom: 4px;
+  filter: drop-shadow(0 2px 0 rgba(0,0,0,0.15));
+  animation: infoIconPop 0.32s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes infoIconPop { from { transform: scale(0.4); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 #overlay-info h2 {
   margin: 0 0 10px; font-size: 19px; text-align: center; color: #6a3f12;
 }
@@ -1088,9 +1094,33 @@ body { display: block; }
   overflow-y: auto; max-height: 300px;
   font-size: 13px; line-height: 1.55; text-align: left;
   padding-right: 4px;
+  width: 100%;
 }
 #overlay-info #info-body p { margin: 0 0 9px; }
 #overlay-info #info-body p:last-child { margin-bottom: 0; }
+/* Thẻ 1-mẹo/lần (chỉ dùng ở mode 'guide') — icon riêng + tiêu đề ngắn + 1 câu,
+   thay cho đọc liền 1 mạch 7 đoạn văn cho đỡ ngán, giống thẻ "mẹo chơi" onboarding. */
+#overlay-info .info-step {
+  display: flex; flex-direction: column; align-items: center; text-align: center;
+  gap: 6px; padding: 6px 4px 2px;
+  animation: infoStepIn 0.22s ease;
+}
+@keyframes infoStepIn { from { opacity: 0; transform: translateX(10px); } to { opacity: 1; transform: translateX(0); } }
+#overlay-info .info-step-icon { font-size: 30px; line-height: 1; }
+#overlay-info .info-step-title { font-weight: bold; font-size: 14.5px; color: #6a3f12; }
+#overlay-info .info-step-text { font-size: 13px; line-height: 1.55; max-width: 340px; }
+#overlay-info .info-dots {
+  display: flex; gap: 6px; justify-content: center; margin: 12px 0 2px;
+}
+#overlay-info .info-dots .dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: rgba(106, 63, 18, 0.28);
+  transition: background 0.15s, transform 0.15s;
+}
+#overlay-info .info-dots .dot.active { background: #e8952f; transform: scale(1.25); }
+#overlay-info .info-nav {
+  display: flex; gap: 10px; margin-top: 10px;
+}
 #overlay-info .info-checkbox {
   display: flex; align-items: center; gap: 6px;
   font-size: 12px; margin: 14px 0 4px; cursor: pointer;

@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Thủ Thành — Tower Defense Pixel</title>
-<link rel="stylesheet" href="css/style.css?v=15">
+<link rel="stylesheet" href="css/style.css?v=16">
 </head>
 <body>
 <!--
@@ -242,8 +242,14 @@
          chung 1 khung, nội dung đổi động qua GuideUI (js/ui/guide.js). -->
     <div id="overlay-info" class="hidden">
       <div class="info-panel">
+        <div class="info-icon" id="info-icon">📖</div>
         <h2 id="info-title"></h2>
         <div id="info-body"></div>
+        <div class="info-dots hidden" id="info-dots"></div>
+        <div class="info-nav hidden" id="info-nav">
+          <button class="menu-btn secondary btn-compact" id="btn-info-back">← Trước</button>
+          <button class="menu-btn btn-compact" id="btn-info-next">Tiếp →</button>
+        </div>
         <label class="info-checkbox"><input type="checkbox" id="info-dontshow"> <span id="info-checkbox-label"></span></label>
         <button class="menu-btn btn-compact" id="btn-info-close">Đã hiểu</button>
       </div>

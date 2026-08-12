@@ -290,35 +290,39 @@ const CONFIG = {
   // ui/guide.js + systems/tutorial.js). Chỉ gắn ở map thật sự đổi luật chơi.
   mechanicIntros: {
     1: {
-      title: 'Cơ Chế Mới: Quái Phân Thân',
+      icon: '🌀',
+      title: 'Quái Phân Thân',
       lines: [
-        'Từ màn này, một số đợt sẽ xuất hiện Quái Phân Thân — thân hình to, máu trâu hơn hẳn quái thường.',
-        'Khi đi được nửa đường, nó sẽ TỰ TÁCH thành 3 quái nhỏ toả ra 3 hướng rồi tiếp tục lao vào thành.',
-        'Chuẩn bị hỏa lực diện rộng (tháp AoE) quanh khu vực giữa đường để dọn gọn cả 3 con cùng lúc.',
+        'Thân hình to, máu trâu hơn hẳn quái thường.',
+        'Đi được nửa đường là TỰ TÁCH thành 3 quái nhỏ, toả 3 hướng rồi lao tiếp vào thành.',
+        'Dàn hoả lực diện rộng (tháp AoE) quanh giữa đường để dọn gọn cả 3 con cùng lúc.',
       ],
     },
     4: {
-      title: 'Cơ Chế Mới: Tấn Công Nhiều Hướng',
+      icon: '🧭',
+      title: 'Tấn Công Nhiều Hướng',
       lines: [
-        'Từ màn này, quái sẽ đổ bộ từ NHIỀU cổng ra quân cùng lúc thay vì chỉ 1 hướng.',
-        'Các luồng quái sẽ chia nhánh rồi hội tụ lại tại một điểm trước khi đánh thẳng vào thành.',
-        'Hãy bố trí tháp ngay tại những "nút thắt" nơi các luồng quái gặp nhau để tối ưu hỏa lực.',
+        'Quái đổ bộ từ NHIỀU cổng ra quân cùng lúc, không còn chỉ 1 hướng.',
+        'Các luồng quái chia nhánh rồi hội tụ lại tại một điểm trước khi đánh thẳng vào thành.',
+        'Bố trí tháp ngay tại những "nút thắt" nơi các luồng quái gặp nhau để tối ưu hỏa lực.',
       ],
     },
     8: {
-      title: 'Cơ Chế Mới: Hầm Bí Mật',
+      icon: '🕳️',
+      title: 'Hầm Bí Mật',
       lines: [
-        'Từ màn này, một số quái sẽ chui vào hầm bí mật giữa đường, biến mất khỏi tầm bắn.',
-        'Chúng sẽ bất ngờ chui lên ở một vị trí khác gần cuối đường, rút ngắn quãng đường bị tháp bắn.',
-        'Chú ý các cổng hầm phát sáng trên bản đồ và bố trí thêm hỏa lực gần khu vực cổng ra.',
+        'Một số quái chui vào hầm bí mật giữa đường, biến mất khỏi tầm bắn.',
+        'Chúng bất ngờ chui lên ở vị trí khác gần cuối đường, rút ngắn quãng đường bị tháp bắn.',
+        'Chú ý các cổng hầm phát sáng trên bản đồ, bố trí thêm hỏa lực gần khu vực cổng ra.',
       ],
     },
     10: {
-      title: 'Cơ Chế Mới: Đường Luân Phiên Đóng/Mở',
+      icon: '🔀',
+      title: 'Đường Luân Phiên Đóng/Mở',
       lines: [
-        'Từ màn này, không phải lúc nào cả 2 hướng đường cũng cùng mở.',
+        'Không phải lúc nào cả 2 hướng đường cũng cùng mở.',
         'Mỗi đợt chỉ MỘT hướng được quái sử dụng, luân phiên qua lại giữa các đợt.',
-        'Quan sát cổng nào đang mở (xem hiệu ứng tại cổng) trước khi dồn hết tháp vào 1 phía.',
+        'Quan sát cổng nào đang mở trước khi dồn hết tháp vào 1 phía.',
       ],
     },
   },
