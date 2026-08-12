@@ -247,6 +247,33 @@
     if (game.hoveredTower && game.hoveredTower !== game.selectedTower) drawRangeRing(game.hoveredTower);
     if (game.armedTowerType && mouseX >= 0) drawBuildPreview();
     if (game.globalSkills.pendingActivation && mouseX >= 0) drawSkillPreview();
+    if (isHeroMoving()) drawHeroMoveTarget();
+  }
+
+  function drawHeroMoveTarget() {
+    if (!game || !game.hero || !game.hero.moveTarget) return;
+    const target = game.hero.moveTarget;
+    const time = Date.now() * 0.005;
+    const pulseRadius = 12 + Math.sin(time * 6) * 3;
+
+    ctx.save();
+    ctx.strokeStyle = '#6bff95';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.arc(target.x, target.y, pulseRadius, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.strokeStyle = 'rgba(107, 255, 149, 0.85)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(target.x - 9, target.y); ctx.lineTo(target.x + 9, target.y);
+    ctx.moveTo(target.x, target.y - 9); ctx.lineTo(target.x, target.y + 9);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function isHeroMoving() {
+    return game && game.hero && game.hero.alive && game.hero.moveTarget !== null;
   }
 
   function drawRangeRing(tower) {
@@ -345,10 +372,6 @@
     return game.towers.find(t => Math.hypot(t.x - p.x, t.y - p.y) < 30 || (p.y <= t.y + 12 && p.y >= t.y - 120 && Math.abs(p.x - t.x) < 36));
   }
 
-  // Hero giờ di chuyển theo kiểu "chọn rồi chỉ điểm đến" (bấm vào Hero -> chờ bấm 1
-  // phát nữa ở đâu đó để ra lệnh) thay vì bấm CHỖ TRỐNG BẤT KỲ trên bản đồ là chạy
-  // tới ngay — cách cũ dễ khiến Hero bị lệnh đi lung tung chỉ vì người chơi bấm map
-  // để làm việc khác (ngắm bản đồ, click nhầm...).
   let heroSelected = false;
   function heroHitTest(p) {
     return game.hero.alive && Math.hypot(p.x - game.hero.x, p.y - game.hero.y) <= 28;
@@ -359,8 +382,6 @@
     HUD.setHeroArmed(v);
   }
 
-  // Vật cản (đá lớn/bụi rậm) — bấm vào là DỌN NGAY nếu đủ tiền (không cần chọn/xác
-  // nhận thêm bước nào, giống cơ chế "tap để phá rubble" kinh điển của thể loại).
   function obstacleAt(p) {
     return (game.map.obstacles || []).find(ob => !ob.cleared && Math.hypot(ob.x - p.x, ob.y - p.y) <= ob.radius + 8);
   }
@@ -372,8 +393,6 @@
     if (typeof SpriteFX !== 'undefined') SpriteFX.burstDust(game, ob.x, ob.y - 10);
   }
 
-  // Tài nguyên trang trí (cây/đá/bụi/nhà/điểm nhấn) — y hệt vật cản: bấm vào là
-  // DỌN NGAY nếu đủ tiền, trừ tiền và mở ô đất để xây tháp.
   function tryClearResource(res) {
     if (!game.economy.spend(res.cost)) { AssetLoader.playSound('error'); return; }
     game.map.clearResource(res);
@@ -391,17 +410,10 @@
   });
   canvas.addEventListener('mouseleave', () => { mouseX = -1; mouseY = -1; if (game) game.hoveredTower = null; });
 
-  // Đầu lâu tại điểm quái ra quân CHỈ hiện + bấm được khi đang chờ gọi đợt kế tiếp
-  // (dọn sạch quái đợt trước) — khớp đúng điều kiện waveReady dùng để vẽ nó trong
-  // drawSpawnAndBase, để không thể bấm trúng chỗ đầu lâu đang ẩn.
   function canCallWave() {
     return game.waveManager.waitingForConfirm && game.enemies.length === 0;
   }
 
-  // Vùng CHỮ NHẬT bao trọn cả cụm hình (trại quái + 2 cọc đầu lâu, cao hẳn lên phía
-  // trên tâm b.y) thay vì chỉ tính theo bán kính r=19 của riêng huy hiệu tròn nhỏ —
-  // nếu không phần lớn cú bấm vào hình trại quái/cọc sẽ trượt ra ngoài, rơi vào lệnh
-  // "Hero đi tới đó" khiến Hero đứng đè lên che mất đầu lâu.
   function spawnButtonAt(p) {
     if (!canCallWave()) return null;
     return game.map.spawnButtons.find(b => {
@@ -413,6 +425,12 @@
   canvas.addEventListener('click', (e) => {
     if (appState !== STATE.PLAYING || !game) return;
     const p = canvasPos(e);
+
+    // Khi Tướng đang di chuyển -> KHÔNG CHO phép nhấp bất cứ thao tác nào khác trên map cho tới khi Tướng di chuyển xong!
+    if (isHeroMoving()) {
+      AssetLoader.playSound('error');
+      return;
+    }
 
     if (!game.armedTowerType && !game.globalSkills.pendingActivation && spawnButtonAt(p)) {
       hudCallbacks.onNextWave();
@@ -438,14 +456,15 @@
     const resHit = game.map.resourceAt(p.x, p.y);
     if (resHit) { tryClearResource(resHit); return; }
 
-    // Hero: đã CHỌN từ trước (bấm vào Hero ở dưới) -> cú bấm này LÀ điểm đến, trừ khi
-    // bấm lại đúng vào Hero thì coi như huỷ chọn. Chỉ khi chưa chọn mới coi 1 cú bấm
-    // trúng Hero là "chọn nó" — tách bấm-chọn khỏi bấm-ra-lệnh thành 2 bước rõ ràng,
-    // để bấm map cho việc khác (xem bản đồ, lỡ tay) không còn vô tình lôi Hero đi.
+    // Hero: đã CHỌN từ trước (bấm vào Hero ở dưới) -> cú bấm này LÀ điểm đến để di chuyển Tướng.
+    // Đảm bảo KHÔNG bao giờ bị nhảy sang chọn tháp hay mở bảng nâng cấp tháp!
     if (heroSelected) {
       const stillHero = heroHitTest(p);
       setHeroSelected(false);
-      if (!stillHero) game.hero.moveTo(p.x, p.y);
+      deselectTower();
+      if (!stillHero) {
+        game.hero.moveTo(p.x, p.y);
+      }
       return;
     }
     if (heroHitTest(p)) {
@@ -454,14 +473,12 @@
       return;
     }
 
-    // Chọn tháp đã xây (kể cả Barracks để đặt lại Rally Point).
-    // Vùng click bao trọn cả thân building (sprite Tiny Swords khá cao, vươn lên trên điểm x,y khá nhiều).
+    // Chọn tháp đã xây (kể cả Barracks để đặt lại Rally Point) — CHỈ cho chọn khi không điều khiển Hero.
     const clicked = towerAt(p);
     if (clicked) {
-      // Bấm lại đúng tháp đang chọn -> bỏ chọn (tắt thanh hành động), thay vì đứng yên
-      // không phản hồi gì — cách tắt nhanh, không cần click ra chỗ trống.
       if (game.selectedTower === clicked) deselectTower();
       else {
+        deselectTower();
         game.selectedTower = clicked;
         game.towers.forEach(t => t.selected = (t === clicked));
       }
@@ -583,18 +600,19 @@
       if (game.speedOptions.includes(rate)) game.speed = rate;
     },
     onNextWave: () => {
-      // Chỉ cho xác nhận wave kế tiếp khi bản đồ đã sạch quái của đợt trước —
-      // tránh 2 wave chồng lên nhau. requestNextWaveNow() tự bỏ qua nếu đang active.
+      if (isHeroMoving()) { AssetLoader.playSound('error'); return; }
       if (game.enemies.length > 0) { AssetLoader.playSound('error'); return; }
       game.waveManager.requestNextWaveNow();
     },
     onToggleSpawnMode: () => {
+      if (isHeroMoving()) { AssetLoader.playSound('error'); return; }
       game.waveManager.setAutoAdvance(!game.waveManager.autoAdvance);
     },
     onExit: () => exitToLevelSelect(),
     onRestart: () => startLevel(game.mapIndex, game.hero.heroType),
     onNextLevel: () => startLevel(game.mapIndex + 1, game.hero.heroType),
     onArmTower: (type) => {
+      if (isHeroMoving()) { AssetLoader.playSound('error'); return; }
       if (game.economy.gold < CONFIG.towers[type].levels[0].cost) { AssetLoader.playSound('error'); }
       game.armedTowerType = game.armedTowerType === type ? null : type;
       game.globalSkills.pendingActivation = null;
@@ -604,9 +622,16 @@
       deselectTower();
     },
     onCloseTowerPanel: () => deselectTower(),
-    onUpgradeTower: (tower) => { if (tower.upgrade(game.economy)) AssetLoader.playSound('upgrade'); },
-    onBranchTower: (tower, key) => { if (tower.chooseBranch(key, game.economy, game)) AssetLoader.playSound('upgrade'); },
+    onUpgradeTower: (tower) => {
+      if (isHeroMoving()) { AssetLoader.playSound('error'); return; }
+      if (tower.upgrade(game.economy)) AssetLoader.playSound('upgrade');
+    },
+    onBranchTower: (tower, key) => {
+      if (isHeroMoving()) { AssetLoader.playSound('error'); return; }
+      if (tower.chooseBranch(key, game.economy, game)) AssetLoader.playSound('upgrade');
+    },
     onSellTower: (tower) => {
+      if (isHeroMoving()) { AssetLoader.playSound('error'); return; }
       if (tower._hammerSfx) { AssetLoader.stopSound(tower._hammerSfx); tower._hammerSfx = null; }
       game.economy.earn(tower.sellValue());
       game.towers = game.towers.filter(t => t !== tower);
@@ -614,6 +639,7 @@
       deselectTower();
     },
     onGlobalSkill: (key) => {
+      if (isHeroMoving()) { AssetLoader.playSound('error'); return; }
       game.armedTowerType = null; HUD.setArmedTower(null);
       if (heroSelected) setHeroSelected(false);
       if (game.globalSkills.pendingActivation === key) { game.globalSkills.pendingActivation = null; HUD.setPendingSkill(null); }

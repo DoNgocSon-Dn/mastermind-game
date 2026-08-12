@@ -165,6 +165,13 @@ const HUD = (() => {
   }
 
   function update(game) {
+    if (game.hero && game.hero.alive && game.hero.moveTarget !== null) {
+      els.armedBanner.textContent = '🚶 Tướng đang di chuyển... (Đang khóa các thao tác khác cho tới khi tới nơi)';
+      els.armedBanner.classList.remove('hidden');
+    } else if (!game.armedTowerType && !game.globalSkills.pendingActivation && !game.hero.selected) {
+      els.armedBanner.classList.add('hidden');
+    }
+
     els.gold.textContent = DevMode.enabled ? '∞' : Math.floor(game.economy.gold);
     if (lastGold !== null && game.economy.gold > lastGold) {
       els.gold.parentElement.classList.remove('gold-flash'); void els.gold.offsetWidth;
