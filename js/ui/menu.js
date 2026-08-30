@@ -12,7 +12,7 @@ const MenuUI = (() => {
     winter: { icon: '❄️', name: 'Mùa Đông' },
   };
 
-  function init({ onPlayClicked, onLevelSelected }) {
+  function init({ onPlayClicked, onLevelSelected, onResearchClicked }) {
     els.menu = document.getElementById('screen-menu');
     els.levelSelect = document.getElementById('screen-levelselect');
     els.levelList = document.getElementById('level-list');
@@ -21,6 +21,8 @@ const MenuUI = (() => {
     els.chkDevMode = document.getElementById('chk-devmode');
 
     document.getElementById('btn-play').onclick = () => { AssetLoader.playSound('select'); onPlayClicked(); };
+    const btnResearch = document.getElementById('btn-research');
+    if (btnResearch && onResearchClicked) btnResearch.onclick = () => { AssetLoader.playSound('select'); onResearchClicked(); };
     document.getElementById('btn-settings').onclick = () => els.settingsPanel.classList.toggle('hidden');
     document.getElementById('btn-settings-close').onclick = () => els.settingsPanel.classList.add('hidden');
     document.getElementById('chk-mute').onchange = (e) => { SoundSettings.muted = e.target.checked; };
@@ -90,6 +92,7 @@ const MenuUI = (() => {
     document.getElementById('game-container').classList.add('hidden');
     if (window.__setPlayingChrome) window.__setPlayingChrome(false);
     updateMapEditorButtonsVisibility();
+    if (typeof ResearchUI !== 'undefined') ResearchUI.refreshBadge();
   }
 
   function showLevelSelect() {

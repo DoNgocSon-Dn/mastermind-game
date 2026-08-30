@@ -638,6 +638,17 @@ const THEME_DECOR_FILTERS = {
 // và _drawObstacleItem).
 const HOUSE_DECOR_FILTER = 'saturate(0.55) brightness(0.92) sepia(0.12)';
 
+// Trình duyệt rất cũ (Safari < 15) không hỗ trợ ctx.filter trên Canvas2D — gán nó
+// biến thành no-op, khiến TOÀN BỘ nhuộm màu theo mùa (đất núi lửa cháy, quái/boss
+// theo mùa, decor...) biến mất im lặng. Dò 1 lần lúc nạp file để có đường lui.
+const CTX_FILTER_OK = (() => {
+  try {
+    const c = document.createElement('canvas').getContext('2d');
+    c.filter = 'blur(1px)';
+    return c.filter === 'blur(1px)';
+  } catch (e) { return false; }
+})();
+
 // Bộ lọc riêng cho MẶT ĐẤT (tách khỏi bộ lọc trang trí): với núi lửa cần nền tối hơn
 // hẳn so với cây/đá thì mới ra chất đất cháy, còn các theme khác dùng chung 1 bộ như cũ.
 const THEME_GROUND_FILTERS = {
@@ -731,7 +742,12 @@ class GameMap {
   }
 
   waveScaleFor(waveIndex) {
-    return this.difficulty * (1 + waveIndex * 0.11);
+    // Tăng dồn theo wave nhưng CHỮNG DẦN về cuối. Trước đây tuyến tính 0.11/wave:
+    // map 20 wave lên tới hệ số ~10x (boss cuối ~24k HP hiệu dụng) — bào rất mệt.
+    // Giờ ~0.105/wave ở các đợt đầu, giảm dần còn ~0.076/wave ở đợt thứ ~20 → wave
+    // đầu gần như không đổi, chỉ hạ ~15-18% ở những đợt cuối các map dài.
+    const perWave = 0.105 * Math.max(0.72, 1 - waveIndex * 0.012);
+    return this.difficulty * (1 + waveIndex * perWave);
   }
 
   // ---------------- Đảo cỏ / vách đá / nước (autotile Tiny Swords) ----------------
@@ -754,7 +770,7 @@ class GameMap {
     const m = this._islandMask;
     const cell = m.cell;
     ctx.save();
-    ctx.filter = THEME_GROUND_FILTERS[this.theme] || THEME_DECOR_FILTERS[this.theme] || 'none';
+    if (CTX_FILTER_OK) ctx.filter = THEME_GROUND_FILTERS[this.theme] || THEME_DECOR_FILTERS[this.theme] || 'none';
     if (!sheet) {
       ctx.fillStyle = THEME_BASE[this.theme] || '#3f7a3a';
       ctx.fillRect(0, 0, CONFIG.canvas.width, CONFIG.canvas.height);
@@ -767,6 +783,14 @@ class GameMap {
       }
     }
     ctx.restore();
+    // Không có ctx.filter: nhuộm tay các theme cần thay đổi màu MẶT ĐẤT mạnh (núi lửa
+    // = đất cháy) bằng 1 lớp phủ mờ, để map không lòi ra bãi cỏ xanh chói lạc quẻ.
+    if (!CTX_FILTER_OK && THEME_GROUND_FILTERS[this.theme]) {
+      ctx.save();
+      ctx.fillStyle = this.theme === 'volcano' ? 'rgba(34, 20, 14, 0.62)' : 'rgba(20, 20, 30, 0.28)';
+      ctx.fillRect(0, 0, CONFIG.canvas.width, CONFIG.canvas.height);
+      ctx.restore();
+    }
   }
 
   // Danh sách ô ĐẤT nằm sát nước (dùng để rải bọt sóng + đá ven bờ theo đúng đường bờ
@@ -1064,11 +1088,116 @@ class GameMap {
     this._strokeAllPaths(octx);
     octx.restore();
 
+    // (4) Vệt bánh xe + ổ gà + lối mòn giữa đường — "con đường bị giẫm nát nhiều năm"
+    // thay vì 1 dải texture đều tăm tắp. Vẽ SAU mặt đường, TRƯỚC cỏ lấn mép.
+    this._drawRoadWearInto(octx);
+
     // Cỏ lấn mép + sỏi rải dọc 2 bên — vẽ đè lên trên texture đường để phá dáng
     // "2 đường cong song song đều tăm tắp".
     this._drawPathEdgeDecorInto(octx);
 
     this._terrainLayer = off;
+  }
+
+  // Dựng 1 danh sách "vệt mòn" cố định theo seed: ổ gà (đốm tối), vũng nước nhỏ, vệt
+  // đất sáng — rải dọc tim đường. Tính 1 lần, cache.
+  _roadWearSpots() {
+    if (this._wearSpots) return this._wearSpots;
+    const rng = mulberry32(7600 + (this.id || 0));
+    const halfW = this.pathWidth / 2;
+    const spots = [];
+    for (const path of this.paths) {
+      let acc = 0;
+      for (let i = 1; i < path.length; i++) {
+        const a = path[i - 1], b = path[i];
+        const seg = Math.hypot(b.x - a.x, b.y - a.y);
+        const nx = seg ? -(b.y - a.y) / seg : 0, ny = seg ? (b.x - a.x) / seg : 0;
+        for (let d = 0; d < seg; d += 6) {
+          acc += 6;
+          if (acc < 22 || rng() > 0.5) continue;
+          acc = 0;
+          const t = d / (seg || 1);
+          const cx = a.x + (b.x - a.x) * t, cy = a.y + (b.y - a.y) * t;
+          const off = (rng() - 0.5) * halfW * 1.3;
+          const kind = rng();
+          spots.push({
+            x: cx + nx * off, y: cy + ny * off,
+            r: 2 + rng() * 5, rot: rng() * Math.PI,
+            kind: kind < 0.55 ? 'pit' : (kind < 0.8 ? 'light' : 'puddle'),
+          });
+        }
+      }
+    }
+    this._wearSpots = spots;
+    return spots;
+  }
+
+  _drawRoadWearInto(octx) {
+    // Lối mòn giữa đường: dải sáng mờ theo tim (chỗ chân giẫm nhiều nhất) + 2 rãnh
+    // bánh xe tối 2 bên tim — theo đúng hình cong của đường.
+    octx.save();
+    octx.lineCap = 'round'; octx.lineJoin = 'round';
+    for (const path of this.paths) {
+      octx.strokeStyle = 'rgba(255,240,215,0.055)';
+      octx.lineWidth = this.pathWidth * 0.5;
+      this._strokePolyline(octx, path);
+      for (const rutOff of [-9, 9]) {
+        octx.strokeStyle = 'rgba(30,18,8,0.16)';
+        octx.lineWidth = 3.2;
+        octx.beginPath();
+        for (let i = 0; i < path.length; i++) {
+          const p = path[i];
+          const pn = path[Math.min(i + 1, path.length - 1)];
+          const pp = path[Math.max(i - 1, 0)];
+          const dx = pn.x - pp.x, dy = pn.y - pp.y, len = Math.hypot(dx, dy) || 1;
+          const x = p.x + (-dy / len) * rutOff, y = p.y + (dx / len) * rutOff;
+          if (i === 0) octx.moveTo(x, y); else octx.lineTo(x, y);
+        }
+        octx.stroke();
+      }
+    }
+    octx.restore();
+
+    // Ổ gà / vũng nước / vệt đất sáng
+    octx.save();
+    for (const s of this._roadWearSpots()) {
+      octx.save();
+      octx.translate(s.x, s.y); octx.rotate(s.rot);
+      if (s.kind === 'pit') {
+        octx.fillStyle = 'rgba(24,14,6,0.28)';
+        octx.beginPath(); octx.ellipse(0, 0, s.r, s.r * 0.7, 0, 0, Math.PI * 2); octx.fill();
+        octx.fillStyle = 'rgba(0,0,0,0.18)';
+        octx.beginPath(); octx.ellipse(0.5, 0.8, s.r * 0.6, s.r * 0.42, 0, 0, Math.PI * 2); octx.fill();
+      } else if (s.kind === 'puddle') {
+        octx.fillStyle = 'rgba(70,90,105,0.30)';
+        octx.beginPath(); octx.ellipse(0, 0, s.r * 1.2, s.r * 0.6, 0, 0, Math.PI * 2); octx.fill();
+        octx.fillStyle = 'rgba(200,220,235,0.18)';
+        octx.beginPath(); octx.ellipse(-s.r * 0.3, -s.r * 0.2, s.r * 0.5, s.r * 0.22, 0, 0, Math.PI * 2); octx.fill();
+      } else {
+        octx.fillStyle = 'rgba(255,235,200,0.10)';
+        octx.beginPath(); octx.ellipse(0, 0, s.r * 1.3, s.r * 0.6, 0, 0, Math.PI * 2); octx.fill();
+      }
+      octx.restore();
+    }
+    octx.restore();
+  }
+
+  // Vector hướng đi (đơn vị) của đoạn đường GẦN NHẤT với điểm (px,py) — dùng cho
+  // đường ray mỏ, vệt lối mòn... hướng dọc chiều quái di chuyển.
+  _pathDirAt(px, py) {
+    let best = { x: 1, y: 0 }, bestD = Infinity;
+    for (const path of this.paths) {
+      for (let i = 0; i < path.length - 1; i++) {
+        const a = path[i], b = path[i + 1];
+        const d = distToSegment(px, py, a, b);
+        if (d < bestD) {
+          bestD = d;
+          const dx = b.x - a.x, dy = b.y - a.y, l = Math.hypot(dx, dy) || 1;
+          best = { x: dx / l, y: dy / l };
+        }
+      }
+    }
+    return best;
   }
 
   // Đánh dấu 1 tài nguyên đã phá. Decor không còn bake tĩnh (xem decorEntities())
@@ -1126,6 +1255,7 @@ class GameMap {
   _getFilteredImage(imgKey, filter) {
     const img = AssetLoader.getImage(imgKey);
     if (!img || !filter || filter === 'none') return img;
+    if (!CTX_FILTER_OK) return img; // trình duyệt cũ: trả ảnh gốc, khỏi tạo canvas copy vô ích
     this._filterCache = this._filterCache || {};
     const cacheKey = imgKey + '|' + filter;
     let cached = this._filterCache[cacheKey];
@@ -1442,6 +1572,18 @@ class GameMap {
       ctx.filter = 'none';
     });
 
+    // Thân TOÀ THÀNH của người chơi — sprite blue_castle. Trước đây chỉ dùng để tính
+    // kích thước chứ chưa bao giờ vẽ ra (cổng thành chỉ là 2 tháp tròn + khoảng hở);
+    // giờ Toà Thành nâng cấp được (Pháo/Tường — xem entities/castle.js) nên cần hình
+    // thật làm bệ. KHÔNG nhuộm theme (đồ người chơi giữ nguyên phe xanh, như tháp).
+    const castle = this.castlePos;
+    const castleImg = AssetLoader.getImage('blueCastle');
+    if (castleImg) {
+      const cw2 = castle.w * 1.02;
+      const ch2 = cw2 * (castleImg.height / castleImg.width);
+      ctx.drawImage(castleImg, castle.x - cw2 / 2, castle.y - ch2 + 16, cw2, ch2);
+    }
+
     // 2 toà tháp pháo đài hai bên cổng thành — canh giữ lối vào điểm cuối đường,
     // dùng sprite tháp tròn (blueTower/yellowTower/redTower) thay cho 2 căn nhà cũ.
     const towerKey = this.theme === 'autumn' ? 'yellowTower' : (this.theme === 'volcano' ? 'redTower' : 'blueTower');
@@ -1481,36 +1623,113 @@ class GameMap {
       ctx.font = '19px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
       ctx.fillStyle = '#fff';
       ctx.fillText('💀', b.x, b.y + 7);
-
-      if (i === 0) {
-        const label = 'Bấm để thả quái';
-        ctx.font = 'bold 11px sans-serif';
-        const w = ctx.measureText(label).width + 14;
-        const ly = b.y + b.r + 16;
-        ctx.fillStyle = 'rgba(38,14,10,0.9)';
-        ctx.beginPath(); ctx.roundRect(b.x - w / 2, ly - 11, w, 16, 5); ctx.fill();
-        ctx.strokeStyle = `rgba(255,170,70,${0.55 + pulse * 0.45})`; ctx.lineWidth = 1.5; ctx.stroke();
-        ctx.fillStyle = '#ffd9a0';
-        ctx.fillText(label, b.x, ly + 1);
-      }
+      // (Bỏ nhãn chữ "Bấm để thả quái" — huy hiệu đầu lâu nhấp nháy đã đủ rõ, chữ chỉ
+      //  làm rối. Lời nhắc "▸ Gọi đợt tiếp theo" giờ nằm gọn ở banner giữa trên.)
     });
     ctx.restore();
   }
 
-  // Đường hầm/cổng dịch chuyển bí mật (chỉ map nào khai báo `tunnels`) — vẽ tại
-  // từng cửa vào VÀ cửa ra, cả 2 đều NẰM TRÊN cùng 1 đường chính liền mạch (không
-  // có đoạn đường riêng nào cần vẽ thêm ở đây). Mặc định dùng sprite "mỏ vàng"
-  // (goldMine); nếu tunnel có `color` -> vẽ thành cổng phép thuật phát sáng theo
-  // màu đó thay vì miệng hầm (dùng cho map cổng dịch chuyển đa sắc).
+  // Đường hầm/cổng dịch chuyển bí mật (chỉ map nào khai báo `tunnels`). Quái ĐI VÀO
+  // cửa `t.x,t.y` (biến mất) rồi CHUI LÊN ở `t.exitX,t.exitY`. Mặc định vẽ MIỆNG HẦM
+  // MỎ đầy đủ (hố tối + khung gỗ + đường ray + đèn) — nếu tunnel có `color` thì vẽ
+  // thành cổng phép phát sáng màu đó (dùng cho map cổng dịch chuyển đa sắc).
   drawTunnels(ctx) {
     if (!this.tunnels || !this.tunnels.length) return;
-    const img = AssetLoader.getImage('goldMine');
-    ctx.save();
-    const dw = 46, dh = img ? dw * (img.height / img.width) : dw;
-    const drawMineMouth = (x, y) => {
-      ctx.drawImage(img, 0, 0, img.width, img.height, x - dw / 2, y - dh * 0.82, dw, dh);
-    };
+    const headImg = AssetLoader.getImage('goldMine');
     const now = performance.now();
+    ctx.save();
+
+    // Ray gỗ dẫn vào/ra hầm — 2 thanh song song + tà vẹt ngang, chạy dọc chiều đường.
+    const drawRails = (x, y, dirX, dirY, into) => {
+      const len = 34, half = 9;
+      const px = -dirY, py = dirX; // vuông góc
+      const sx = into ? -1 : 1;    // ray "vào" chạy ngược hướng đi, "ra" chạy xuôi
+      ctx.save();
+      ctx.lineCap = 'butt';
+      // tà vẹt
+      ctx.strokeStyle = 'rgba(58,38,20,0.7)'; ctx.lineWidth = 3;
+      for (let d = 6; d <= len; d += 8) {
+        const bx = x + dirX * d * sx, by = y + dirY * d * sx;
+        ctx.beginPath();
+        ctx.moveTo(bx + px * (half + 2), by + py * (half + 2));
+        ctx.lineTo(bx - px * (half + 2), by - py * (half + 2));
+        ctx.stroke();
+      }
+      // 2 thanh ray
+      ctx.strokeStyle = 'rgba(120,110,95,0.85)'; ctx.lineWidth = 2;
+      for (const s of [1, -1]) {
+        ctx.beginPath();
+        ctx.moveTo(x + px * half * s, y + py * half * s);
+        ctx.lineTo(x + dirX * len * sx + px * half * s, y + dirY * len * sx + py * half * s);
+        ctx.stroke();
+      }
+      ctx.restore();
+    };
+
+    // Miệng hầm mỏ: hố tối bo tròn + gò đất/đá vòng cung phía trên + khung gỗ chống
+    // + đèn lồng đỏ nhấp nháy + bụi bay lên. `into` = cửa vào (không có đèn xanh dẫn ra).
+    const drawMineMouth = (x, y, into) => {
+      const dir = this._pathDirAt(x, y);
+      drawRails(x, y, dir.x, dir.y, into);
+
+      // Gò đá vòng cung ôm quanh miệng hầm
+      ctx.save();
+      ctx.fillStyle = 'rgba(74,54,38,0.95)';
+      ctx.beginPath(); ctx.ellipse(x, y - 6, 26, 20, 0, Math.PI, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = 'rgba(96,74,52,0.9)';
+      ctx.beginPath(); ctx.ellipse(x, y - 4, 22, 16, 0, Math.PI, Math.PI * 2); ctx.fill();
+
+      // Hố tối
+      const hole = ctx.createRadialGradient(x, y - 2, 1, x, y - 2, 17);
+      hole.addColorStop(0, '#000');
+      hole.addColorStop(0.6, '#0c0906');
+      hole.addColorStop(1, 'rgba(20,14,10,0.15)');
+      ctx.fillStyle = hole;
+      ctx.beginPath(); ctx.ellipse(x, y - 2, 16, 13, 0, 0, Math.PI * 2); ctx.fill();
+
+      // Khung gỗ chống: 2 cột + xà ngang
+      ctx.fillStyle = '#4a3018';
+      ctx.fillRect(x - 17, y - 16, 4, 20);
+      ctx.fillRect(x + 13, y - 16, 4, 20);
+      ctx.fillStyle = '#5c3c1e';
+      ctx.fillRect(x - 19, y - 19, 38, 5);
+      ctx.restore();
+
+      // Đèn lồng ở xà ngang — nhấp nháy ấm, hắt sáng vào miệng hầm
+      const flick = 0.7 + Math.sin(now / 140 + x) * 0.15 + Math.sin(now / 337) * 0.15;
+      ctx.save();
+      const lg = ctx.createRadialGradient(x + 12, y - 15, 1, x + 12, y - 15, 16);
+      lg.addColorStop(0, `rgba(255,190,110,${0.5 * flick})`);
+      lg.addColorStop(1, 'rgba(255,170,90,0)');
+      ctx.fillStyle = lg;
+      ctx.beginPath(); ctx.arc(x + 12, y - 15, 16, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = `rgba(255,${170 + flick * 50 | 0},90,${0.9})`;
+      ctx.beginPath(); ctx.arc(x + 12, y - 15, 2.4, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+
+      // Đầu giếng mỏ (sprite goldMine) đặt phía sau/trên, nhỏ, làm "công trình"
+      if (headImg) {
+        const dw = 40, dh = dw * (headImg.height / headImg.width);
+        ctx.save();
+        ctx.globalAlpha = 0.92;
+        if (CTX_FILTER_OK) ctx.filter = 'brightness(0.9) saturate(0.85)';
+        ctx.drawImage(headImg, 0, 0, headImg.width, headImg.height, x - dw / 2, y - dh + 2, dw, dh);
+        ctx.restore();
+      }
+
+      // Bụi/khói mờ bay lên khỏi miệng hầm
+      for (let i = 0; i < 3; i++) {
+        const ph = (now / 1400 + i * 0.37 + x * 0.01) % 1;
+        const dustY = y - 4 - ph * 22;
+        ctx.globalAlpha = 0.18 * (1 - ph);
+        ctx.fillStyle = '#6b5a48';
+        ctx.beginPath();
+        ctx.arc(x + Math.sin(ph * 6 + i) * 5, dustY, 2 + ph * 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    };
+
     const drawPortal = (x, y, color) => {
       const pulse = 0.85 + Math.sin(now / 260 + x * 0.01 + y * 0.01) * 0.15;
       const r = 20 * pulse;
@@ -1527,16 +1746,38 @@ class GameMap {
       ctx.beginPath(); ctx.arc(x, y, r * 0.95, -now / 700, -now / 700 + Math.PI * 1.1); ctx.stroke();
       ctx.globalAlpha = 1;
     };
+
+    // Đường nối MỜ giữa cửa vào ↔ cửa ra (cung nét đứt) — để người chơi thấy 2 miệng
+    // hầm là 1 cặp, quái "dịch chuyển" từ đầu này sang đầu kia.
+    ctx.save();
+    ctx.setLineDash([3, 6]);
+    ctx.lineWidth = 1.5;
+    for (const t of this.tunnels) {
+      const mx = (t.x + t.exitX) / 2, my = (t.y + t.exitY) / 2;
+      const dist = Math.hypot(t.exitX - t.x, t.exitY - t.y);
+      const bow = Math.min(60, dist * 0.28);
+      const ndx = -(t.exitY - t.y) / (dist || 1), ndy = (t.exitX - t.x) / (dist || 1);
+      ctx.strokeStyle = t.color ? t.color : 'rgba(120,90,60,0.4)';
+      ctx.globalAlpha = 0.5 + Math.sin(now / 500) * 0.12;
+      ctx.beginPath();
+      ctx.moveTo(t.x, t.y);
+      ctx.quadraticCurveTo(mx + ndx * bow, my + ndy * bow, t.exitX, t.exitY);
+      ctx.stroke();
+    }
+    ctx.restore();
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
+
     const drawnPoints = new Set();
     for (const t of this.tunnels) {
       const inKey = t.x + ',' + t.y, outKey = t.exitX + ',' + t.exitY;
       if (!drawnPoints.has(inKey)) {
         drawnPoints.add(inKey);
-        if (t.color) drawPortal(t.x, t.y, t.color); else if (img) drawMineMouth(t.x, t.y);
+        if (t.color) drawPortal(t.x, t.y, t.color); else drawMineMouth(t.x, t.y, true);
       }
       if (!drawnPoints.has(outKey)) {
         drawnPoints.add(outKey);
-        if (t.color) drawPortal(t.exitX, t.exitY, t.color); else if (img) drawMineMouth(t.exitX, t.exitY);
+        if (t.color) drawPortal(t.exitX, t.exitY, t.color); else drawMineMouth(t.exitX, t.exitY, false);
       }
     }
     ctx.restore();
@@ -1658,6 +1899,25 @@ function defineMap(o) {
   const obstacles = o.obstacles === false ? [] : generateObstacles(paths, o.seed + 9600, {
     count: o.obstacleCount, isLand, avoidPoints: obstacleAvoid,
   });
+  // Wave đã chốt (tự sinh hoặc viết tay) + đã chèn Phân Thân — tính 1 lần ở đây để
+  // vừa gán vào map, vừa dùng để suy ra pathPattern cho khớp (xem ngay dưới).
+  const resolvedWaves = (() => {
+    const base = o.waves || generateWaves(o.totalWaves, { pathCount: o.rawPaths.length, bossType: o.bossType });
+    return o.id >= 1 ? injectSplitterWaves(base, o.seed, BOSS_MAP_IDS.has(o.id)) : base;
+  })();
+
+  // `pathPattern` (map "đường luân phiên đóng/mở"): TRƯỚC ĐÂY viết tay tách rời khỏi
+  // `waves` nên dễ lệch (bản cũ map 11 lệch ở wave 11/14/15). Giờ SUY THẲNG từ wave
+  // thật — đường "mở" mỗi đợt = đường có nhóm quái 'normal' của đợt đó — nên không
+  // bao giờ desync với chỗ quái thực sự spawn nữa. Chỉ áp dụng khi map khai báo cờ này.
+  let resolvedPathPattern = null;
+  if (o.pathPattern) {
+    resolvedPathPattern = resolvedWaves.map((group, i) => {
+      const g = group.find(x => x.type === 'normal') || group[0];
+      return g ? (g.path || 0) : 0;
+    });
+  }
+
   return new GameMap({
     id: o.id, name: o.name, theme: o.theme, season: o.season, difficulty: o.difficulty,
     paths, decorations, islandMask, obstacles,
@@ -1669,17 +1929,14 @@ function defineMap(o) {
     // `o.pathPattern` (tuỳ chọn): map nhiều đường muốn CHỈ 1 đường "mở" mỗi wave —
     // mảng chỉ số path theo từng wave (lặp vòng nếu totalWaves > length), đường
     // còn lại bị chặn (xem drawPathGates). Không set = mọi đường luôn mở như cũ.
-    pathPattern: o.pathPattern || null,
+    pathPattern: resolvedPathPattern,
     // `o.waves` (tuỳ chọn): cho map tự viết wave thủ công thay vì dùng generator
     // chung — CHỈ dùng khi map cần điều phối nhiều hướng cụ thể (path 0/1/2...)
     // theo ý đồ riêng, generateWaves() mặc định vẫn giữ nguyên cho mọi map khác.
     // Từ map 2 (id>=1) trở đi: chèn thêm cơ chế Phân Thân vào random 1 số wave
     // (xem injectSplitterWaves) — áp dụng SAU CÙNG, bất kể wave tự sinh hay viết tay.
     // Map 1 (id0) CHỪA RIÊNG làm màn "học nghề", không có Phân Thân.
-    waves: (() => {
-      const base = o.waves || generateWaves(o.totalWaves, { pathCount: o.rawPaths.length, bossType: o.bossType });
-      return o.id >= 1 ? injectSplitterWaves(base, o.seed, BOSS_MAP_IDS.has(o.id)) : base;
-    })(),
+    waves: resolvedWaves,
   });
 }
 
@@ -1695,10 +1952,14 @@ const BOSS_MAP_IDS = new Set([3, 7, 11, 15]);
 // nào có Phân Thân, không đổi lung tung mỗi lần tải lại trang.
 function injectSplitterWaves(waves, seed, boosted) {
   const rng = mulberry32((seed || 0) + 9700);
-  const chance = boosted ? 0.65 : 0.4;
-  const count = boosted ? 2 : 1;
+  const chance = boosted ? 0.6 : 0.4;
   return waves.map((group, i) => {
-    if (i === 0 || i === waves.length - 1 || rng() > chance) return group;
+    // Chừa 4 wave ĐẦU (không chỉ wave 1) + wave cuối: 4 đợt đầu là lúc dựng kinh tế,
+    // dồn 1-2 Phân Thân máu trâu vào đó (nhất là map boss, count=2) khi người chơi mới
+    // ~450-550 vàng là quá gắt — đúng ý đồ "wave GIỮA" trong chú thích ở trên.
+    if (i < 4 || i === waves.length - 1 || rng() > chance) return group;
+    // Map boss: 2 splitter, nhưng chỉ từ nửa sau các wave (đỡ dồn cục ở khúc giữa).
+    const count = boosted ? (i >= Math.floor(waves.length * 0.5) ? 2 : 1) : 1;
     const anyEntry = group[0];
     return [...group, { type: 'splitter', count, interval: 1, delay: 0.6, path: anyEntry ? anyEntry.path : 0 }];
   });
@@ -1818,7 +2079,9 @@ const MAPS = [
     rawPaths: [[
       { x: -20, y: 130 }, { x: 720, y: 130 }, { x: 720, y: 300 }, { x: 220, y: 300 }, { x: 220, y: 470 }, { x: 980, y: 470 },
     ]],
-    seed: 3001, decorCount: 40, sheepCount: 3, totalWaves: 6, obstacleCount: 4,
+    // Boss NHẸ riêng cho map học nghề: không hồi máu, máu vừa phải (xem CONFIG.enemies.bossMini)
+    // — boss 'boss' đầy đủ (2200 HP + tự hồi + tăng tốc) là quá nặng cho wave 6 của map đầu.
+    seed: 3001, decorCount: 40, sheepCount: 3, totalWaves: 6, obstacleCount: 4, bossType: 'bossMini',
   }),
 
   defineMap({

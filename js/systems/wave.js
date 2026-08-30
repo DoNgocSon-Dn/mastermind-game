@@ -9,11 +9,15 @@
 // ============================================================
 
 class WaveManager {
-  constructor(waveDefs, onSpawn, onWaveStart, onAllWavesDone) {
+  // endlessGen (tuỳ chọn): hàm (waveIndex) -> mảng group cho 1 đợt mới. Có set =
+  // CHẾ ĐỘ VÔ TẬN: hết waveDefs không "thắng" mà sinh thêm đợt mãi mãi (chơi tới khi
+  // hết mạng). Xem systems/endless.js.
+  constructor(waveDefs, onSpawn, onWaveStart, onAllWavesDone, endlessGen) {
     this.waveDefs = waveDefs;
     this.onSpawn = onSpawn;
     this.onWaveStart = onWaveStart;
     this.onAllWavesDone = onAllWavesDone;
+    this.endlessGen = endlessGen || null;
 
     this.waveIndex = -1;
     this.active = false;
@@ -22,8 +26,9 @@ class WaveManager {
     this.autoAdvance = false; // true = tự nối tiếp hết các wave, không chờ xác nhận
   }
 
+  get endless() { return !!this.endlessGen; }
   get totalWaves() { return this.waveDefs.length; }
-  get currentWaveNumber() { return Math.min(this.waveIndex + 1, this.totalWaves); }
+  get currentWaveNumber() { return this.endless ? this.waveIndex + 1 : Math.min(this.waveIndex + 1, this.totalWaves); }
   // Đã xong wave hiện tại (hoặc chưa xây gì) và còn wave sau — đang chờ người chơi xác nhận.
   get waitingForConfirm() { return !this.active && this.waveIndex >= 0 && !this.finishedAllSpawns; }
 
@@ -36,9 +41,14 @@ class WaveManager {
   startNextWave() {
     this.waveIndex++;
     if (this.waveIndex >= this.waveDefs.length) {
-      this.finishedAllSpawns = true;
-      this.onAllWavesDone && this.onAllWavesDone();
-      return;
+      if (this.endlessGen) {
+        // Vô tận: sinh thêm 1 đợt rồi chơi tiếp — không bao giờ "thắng".
+        this.waveDefs.push(this.endlessGen(this.waveIndex));
+      } else {
+        this.finishedAllSpawns = true;
+        this.onAllWavesDone && this.onAllWavesDone();
+        return;
+      }
     }
     this.active = true;
     this._groups = this.waveDefs[this.waveIndex].map(g => ({ ...g, spawned: 0, timer: g.delay || 0 }));
@@ -82,7 +92,21 @@ class WaveManager {
     }
     if (allDone) {
       this.active = false; // -> waitingForConfirm = true
-      if (this.autoAdvance) this.startNextWave(); // nối liên tục sang wave kế, không chờ xác nhận
+      // Chế độ VÔ TẬN: không bao giờ "hết wave" — luôn còn đợt sau để gọi.
+      if (this.endlessGen) {
+        if (this.autoAdvance) this.startNextWave();
+        return;
+      }
+      // Wave CUỐI CÙNG vừa spawn xong: không còn đợt nào để chờ xác nhận nữa — tự
+      // chốt finishedAllSpawns luôn, thay vì bắt người chơi bấm "gọi đợt" thêm 1 lần
+      // (trước đây huy hiệu 💀 + trạng thái "Sẵn sàng đợt sau" vẫn hiện sau boss cuối,
+      // gây hiểu lầm là còn wave). checkWinLose sẽ cho thắng khi quái cuối bị dọn sạch.
+      if (this.waveIndex >= this.waveDefs.length - 1) {
+        this.finishedAllSpawns = true;
+        this.onAllWavesDone && this.onAllWavesDone();
+      } else if (this.autoAdvance) {
+        this.startNextWave(); // nối liên tục sang wave kế, không chờ xác nhận
+      }
     }
   }
 }

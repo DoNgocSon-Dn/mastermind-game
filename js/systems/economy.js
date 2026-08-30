@@ -14,5 +14,4 @@ class Economy {
     return true;
   }
   earn(amount) { this.gold += amount; }
-  refund(amount) { this.gold += Math.round(amount * CONFIG.economy.sellRefundRatio); }
 }

@@ -29,7 +29,11 @@ class Tower {
 
     // Thời gian chờ xây xong — mỗi loại tháp một mốc khác nhau (Pháo Đài lâu nhất,
     // Cung Thủ nhanh nhất), chỉ áp dụng lúc mới đặt, không lặp lại khi nâng cấp.
-    this.buildTimer = this.cfg.buildTime || 0;
+    // Nâng cấp Nghiên Cứu "Đội Thợ Lành Nghề" rút ngắn thời gian này.
+    this.buildTimer = (this.cfg.buildTime || 0) * Meta.buildTimeMult();
+
+    // Hệ số sát thương từ Nghiên Cứu "Vũ Khí Sắc Bén" — nhân vào damage đạn/skill tháp.
+    this.damageMult = Meta.towerDamageMult();
 
     // Nhân vật đứng trên/cạnh tháp (archer/mage/artillery) — thuần hiệu ứng hình ảnh,
     // không dùng cho barracks (barracks đã có lính thật đứng chặn đường).
@@ -71,6 +75,16 @@ class Tower {
   }
 
   get range() { return (this.stats.range || 0) * this.rangeDebuffMult; }
+
+  // ĐIỂM MÙ (chỉ Pháo Đài): quái áp sát gần hơn khoảng này thì tháp KHÔNG nhắm được.
+  get minRange() {
+    const s = this.stats;
+    return (s.minRange != null ? s.minRange : this.cfg.minRange) || 0;
+  }
+  get accuracy() {
+    const s = this.stats;
+    return s.accuracy != null ? s.accuracy : (this.cfg.accuracy != null ? this.cfg.accuracy : 1);
+  }
 
   upgrade(economy) {
     if (this.branch || this.level >= 3) return false;
@@ -169,7 +183,7 @@ class Tower {
     }
 
     this.cooldown -= dt;
-    if (!this.target || this.target.dead || this._outOfRange(this.target) || (this.target.isFlying && !this._canHitFlying())) {
+    if (!this.target || this.target.dead || this.target.hidden || this._outOfRange(this.target) || this._inBlindSpot(this.target) || (this.target.isFlying && !this._canHitFlying())) {
       this.target = this._selectTarget(game);
     }
     if (this.target && this.cooldown <= 0) {
@@ -190,6 +204,10 @@ class Tower {
   }
 
   _outOfRange(e) { return Math.hypot(e.x - this.x, e.y - this.y) > this.range; }
+  _inBlindSpot(e) {
+    const mr = this.minRange;
+    return mr > 0 && Math.hypot(e.x - this.x, e.y - this.y) < mr;
+  }
 
   _canHitFlying() {
     if (this.branch) return !!this.stats.canHitFlying;
@@ -198,11 +216,12 @@ class Tower {
 
   _selectTarget(game) {
     let best = null, bestProgress = -1;
+    const minR = this.minRange;
     for (const e of game.enemies) {
-      if (e.dead) continue;
+      if (e.dead || e.hidden) continue;
       if (e.isFlying && !this._canHitFlying()) continue;
       const d = Math.hypot(e.x - this.x, e.y - this.y);
-      if (d <= this.range && e.progress > bestProgress) { bestProgress = e.progress; best = e; }
+      if (d <= this.range && d >= minR && e.progress > bestProgress) { bestProgress = e.progress; best = e; }
     }
     return best;
   }
@@ -218,9 +237,11 @@ class Tower {
     const s = this.stats;
     let crit = !!(s.critChance && Math.random() < s.critChance);
     const branch = this.branch;
+    // Xác suất TRÚNG = accuracy tháp − evasion mục tiêu, sàn 12% (không bao giờ chắc trượt).
+    const hitChance = Math.max(0.12, this.accuracy - (this.target.evasion || 0));
     const proj = new Projectile(this.x, this.y - 12, {
-      target: this.target, speed: 430, damage: s.damage, damageType: 'physical',
-      sprite: 'arrow', crit, critMult: s.critMult || 2,
+      target: this.target, speed: 430, damage: s.damage * this.damageMult, damageType: 'physical',
+      sprite: 'arrow', crit, critMult: s.critMult || 2, hitChance,
       onHit: (g, t) => { if (branch === 'B' && s.poison && t && !t.dead) t.applyPoison(s.poison.damage, s.poison.duration, s.poison.tick); },
     });
     game.projectiles.push(proj);
@@ -229,16 +250,16 @@ class Tower {
   _fireMage(game) {
     const s = this.stats;
     game.projectiles.push(new Projectile(this.x, this.y - 12, {
-      target: this.target, speed: 270, damage: s.damage, damageType: 'magic', sprite: 'bolt',
+      target: this.target, speed: 270, damage: s.damage * this.damageMult, damageType: 'magic', sprite: 'bolt',
     }));
   }
 
   _fireArtillery(game) {
     const s = this.stats;
-    if (this.branch === 'B') { this._chainLightning(game, s.damage, this.cfg.branches.B.chain); return; }
+    if (this.branch === 'B') { this._chainLightning(game, s.damage * this.damageMult, this.cfg.branches.B.chain); return; }
     game.projectiles.push(new Projectile(this.x, this.y - 12, {
-      target: this.target, speed: 210, damage: s.damage, damageType: 'physical',
-      splash: s.splash || this.cfg.splash, sprite: 'shell',
+      target: this.target, speed: 210, damage: s.damage * this.damageMult, damageType: 'physical',
+      splash: s.splash || this.cfg.splash, sprite: 'shell', arc: !!this.cfg.arc,
     }));
   }
 
@@ -258,7 +279,7 @@ class Tower {
       dmg *= chainCfg.falloff;
       let next = null, bestD = 95;
       for (const e of game.enemies) {
-        if (e.dead || hit.has(e.id)) continue;
+        if (e.dead || e.hidden || hit.has(e.id)) continue;
         const d = Math.hypot(e.x - current.x, e.y - current.y);
         if (d < bestD) { bestD = d; next = e; }
       }
@@ -276,7 +297,7 @@ class Tower {
         if (this.skillCooldown <= 0 && this.target) { this.skillCooldown = b.skill.cooldown; this._castBarrage(game, b.skill); }
       } else {
         if (this.skillCooldown <= 0) {
-          const inRange = game.enemies.filter(e => !e.dead && Math.hypot(e.x - this.x, e.y - this.y) <= this.range);
+          const inRange = game.enemies.filter(e => !e.dead && !e.hidden && Math.hypot(e.x - this.x, e.y - this.y) <= this.range);
           if (inRange.length) {
             this.skillCooldown = b.skill.cooldown;
             inRange.forEach(e => e.applyRoot(b.skill.rootDuration));
@@ -293,12 +314,13 @@ class Tower {
           game.effects.push(new Effect(this.target.x, this.target.y, 34, 0.35, 'explosion1', 'burst'));
         }
         if (this.skill2Cooldown <= 0) {
-          const inRange = game.enemies.filter(e => !e.dead && Math.hypot(e.x - this.x, e.y - this.y) <= this.range)
+          const inRange = game.enemies.filter(e => !e.dead && !e.hidden && Math.hypot(e.x - this.x, e.y - this.y) <= this.range)
             .sort((a, c) => c.progress - a.progress).slice(0, b.skill2.pushCount);
           if (inRange.length) { this.skill2Cooldown = b.skill2.cooldown; inRange.forEach(e => e.pushBack(b.skill2.pushBack)); }
         }
       } else {
-        if (this.skillCooldown <= 0 && this.target && !this.target.isPolymorphed) {
+        // Boss miễn nhiễm hoá cừu (xem enemy.js applyPolymorph) -> đừng phí cast vào boss.
+        if (this.skillCooldown <= 0 && this.target && !this.target.isBoss && !this.target.isPolymorphed) {
           this.skillCooldown = b.skill.cooldown;
           this.target.applyPolymorph(b.skill.duration);
         }
@@ -307,10 +329,10 @@ class Tower {
       this.skillCooldown -= dt; this.skill2Cooldown -= dt;
       if (this.skillCooldown <= 0 && this.target) { this.skillCooldown = b.skill.cooldown; this._castClusterBomb(game, b.skill); }
       if (this.skill2Cooldown <= 0) {
-        const flying = game.enemies.find(e => !e.dead && e.isFlying && Math.hypot(e.x - this.x, e.y - this.y) <= this.range * 1.3);
+        const flying = game.enemies.find(e => !e.dead && !e.hidden && e.isFlying && Math.hypot(e.x - this.x, e.y - this.y) <= this.range * 1.3);
         if (flying) {
           this.skill2Cooldown = b.skill2.cooldown;
-          game.projectiles.push(new Projectile(this.x, this.y, { target: flying, speed: 260, damage: b.skill2.damage, damageType: 'physical', sprite: 'shell' }));
+          game.projectiles.push(new Projectile(this.x, this.y, { target: flying, speed: 260, damage: b.skill2.damage * this.damageMult, damageType: 'physical', sprite: 'shell' }));
         }
       }
     }
@@ -323,7 +345,7 @@ class Tower {
         timer: i * skillCfg.burstInterval,
         fn: () => {
           if (target && !target.dead) {
-            game.projectiles.push(new Projectile(this.x, this.y - 10, { target, speed: 520, damage: skillCfg.burstDamage, damageType: 'physical', sprite: 'arrow' }));
+            game.projectiles.push(new Projectile(this.x, this.y - 10, { target, speed: 520, damage: skillCfg.burstDamage * this.damageMult, damageType: 'physical', sprite: 'arrow' }));
           }
         },
       });
@@ -341,8 +363,9 @@ class Tower {
         timer: 0.15 + i * 0.05,
         fn: () => {
           game.effects.push(new Effect(mx, my, skillCfg.miniRadius, 0.3, 'explosion2', 'burst'));
+          const mini = skillCfg.miniDamage * this.damageMult;
           for (const e of game.enemies) {
-            if (!e.dead && Math.hypot(e.x - mx, e.y - my) <= skillCfg.miniRadius) DamageSystem.applyTo(game, e, skillCfg.miniDamage, 'physical');
+            if (!e.dead && Math.hypot(e.x - mx, e.y - my) <= skillCfg.miniRadius) DamageSystem.applyTo(game, e, mini, 'physical');
           }
         },
       });

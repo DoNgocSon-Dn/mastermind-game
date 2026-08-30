@@ -252,27 +252,59 @@ const AssetLoader = (() => {
     await Promise.all(tasks);
   }
 
-  function playSound(key, opts = {}) {
+  // Pool node Audio tái sử dụng cho mỗi loại SFX — thay cho cloneNode() mỗi lần phát.
+  // cloneNode() mỗi phát vừa tạo rác GC, vừa có thể vọt quá giới hạn số Audio phát
+  // đồng thời của trình duyệt khi chơi tốc độ 3x (hàng chục tháp bắn/giây) — hệ quả
+  // là tiếng bị rè, trễ, hoặc mất hẳn. Mỗi key giữ tối đa POOL_SIZE node, phát xoay
+  // vòng: phát thứ (POOL_SIZE+1) sẽ cắt ngang node cũ nhất — đúng ý đồ "chặn ồn".
+  const POOL_SIZE = 6;
+  const pools = {};
+  function _pool(key) {
     const base = sounds[key];
-    if (!base) return;
+    if (!base) return null;
+    if (!pools[key]) {
+      const arr = [];
+      for (let i = 0; i < POOL_SIZE; i++) arr.push(base.cloneNode());
+      pools[key] = { arr, idx: 0 };
+    }
+    return pools[key];
+  }
+
+  function _vol(opts) {
+    const v = (opts.volume !== undefined ? opts.volume : 1) * SoundSettings.sfxVolume;
+    return Math.max(0, Math.min(1, v));
+  }
+
+  function playSound(key, opts = {}) {
+    if (SoundSettings.muted) return;
+    const p = _pool(key);
+    if (!p) return;
     try {
-      const s = base.cloneNode();
-      s.volume = (opts.volume !== undefined ? opts.volume : 1) * SoundSettings.sfxVolume;
-      if (!SoundSettings.muted) s.play().catch(() => {});
+      const a = p.arr[p.idx];
+      p.idx = (p.idx + 1) % p.arr.length;
+      a.pause();
+      a.currentTime = 0;
+      a.loop = false;
+      a.volume = _vol(opts);
+      a.play().catch(() => {});
     } catch (e) { /* ignore autoplay restrictions */ }
   }
 
-  // Giống playSound nhưng trả về chính node Audio đang phát (loop mặc định),
-  // để nơi gọi có thể ngắt ngay lập tức bằng stopSound() — dùng cho SFX kéo dài
-  // theo một khoảng thời gian (ví dụ tiếng đóng đinh suốt lúc xây tháp).
+  // SFX kéo dài (loop) mà nơi gọi tự ngắt bằng stopSound() — ví dụ tiếng đóng đinh
+  // suốt lúc xây tháp. KHÔNG dùng pool (nơi gọi giữ tham chiếu riêng). Mọi instance
+  // được ghi vào Set để stopAllSustained() có thể dọn sạch khi rời trận — TRƯỚC ĐÂY
+  // tháp đang xây dở mà thoát/chơi lại/thắng/thua thì tiếng đóng đinh loop mãi mãi
+  // (và chồng thêm mỗi lần lặp lại).
+  const sustainedInstances = new Set();
   function playSustained(key, opts = {}) {
     const base = sounds[key];
     if (!base) return null;
     try {
       const s = base.cloneNode();
       s.loop = opts.loop !== undefined ? opts.loop : true;
-      s.volume = (opts.volume !== undefined ? opts.volume : 1) * SoundSettings.sfxVolume;
+      s.volume = _vol(opts);
       if (!SoundSettings.muted) s.play().catch(() => {});
+      sustainedInstances.add(s);
       return s;
     } catch (e) { return null; }
   }
@@ -280,11 +312,19 @@ const AssetLoader = (() => {
   function stopSound(instance) {
     if (!instance) return;
     try { instance.pause(); instance.currentTime = 0; } catch (e) { /* ignore */ }
+    sustainedInstances.delete(instance);
+  }
+
+  function stopAllSustained() {
+    for (const s of sustainedInstances) {
+      try { s.pause(); s.currentTime = 0; } catch (e) { /* ignore */ }
+    }
+    sustainedInstances.clear();
   }
 
   function getImage(key) { return images[key] || null; }
 
-  return { loadAll, getImage, playSound, playSustained, stopSound, images, sounds };
+  return { loadAll, getImage, playSound, playSustained, stopSound, stopAllSustained, images, sounds };
 })();
 
 // Cài đặt âm lượng đơn giản, có thể bật/tắt trong màn Cài đặt.

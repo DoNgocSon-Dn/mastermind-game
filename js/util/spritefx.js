@@ -40,5 +40,16 @@ const SpriteFX = (() => {
     return -Math.sin(Math.min(1, t) * Math.PI) * 6;
   }
 
-  return { drawFrame, hopOffset };
+  // Bụi bốc lên khi dọn/phá 1 vật cản trên map (đá/cây/nhà) — vài đám khói bụi nhỏ
+  // toả ra quanh điểm phá. Gọi từ main.js:tryClearObstacle / tryClearResource.
+  function burstDust(game, x, y) {
+    if (!game || !game.effects || typeof Effect === 'undefined') return;
+    for (let i = 0; i < 4; i++) {
+      const ox = (Math.random() - 0.5) * 20;
+      const oy = (Math.random() - 0.5) * 8;
+      game.effects.push(new Effect(x + ox, y + oy, 9 + Math.random() * 9, 0.28 + Math.random() * 0.18, 'dust1', 'dust'));
+    }
+  }
+
+  return { drawFrame, hopOffset, burstDust };
 })();

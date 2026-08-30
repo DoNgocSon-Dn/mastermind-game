@@ -18,6 +18,20 @@ class Projectile {
     this.dead = false;
     this.angle = 0;
     this.animTimer = 0; this.animFrame = 0;
+
+    // hitChance (chỉ mũi tên Cung Thủ): < 1 = có thể TRƯỢT. null/undefined = luôn trúng.
+    this.hitChance = opts.hitChance;
+    this._missing = false; // true = đã trượt, đang bay xuyên qua cho tới khi tắt
+
+    // arc = đạn pháo bay theo QUỸ ĐẠO PARABOL (nhô lên rồi rơi xuống). Tính tổng quãng
+    // đường lúc sinh để suy ra "độ cao" hiện tại (chỉ ảnh hưởng phần VẼ + bóng đổ).
+    this.arc = !!opts.arc;
+    if (this.arc) {
+      const t = this.target || { x: this.targetX, y: this.targetY };
+      this._arcTotal = Math.max(1, Math.hypot((t.x || this.x) - this.x, (t.y || this.y) - this.y));
+      this._arcTraveled = 0;
+      this._arcHeight = Math.min(90, this._arcTotal * 0.38);
+    }
   }
 
   update(dt, game) {
@@ -33,8 +47,10 @@ class Projectile {
     const dist = Math.hypot(dx, dy);
     this.angle = Math.atan2(dy, dx);
     const step = this.speed * dt;
+    if (this.arc) this._arcTraveled += Math.min(step, dist);
     if (dist <= step || dist < 4) {
       this.x = tx; this.y = ty;
+      if (this._missing) { this.dead = true; return; } // đạn trượt đã bay hết đoạn xuyên qua
       this._explode(game);
       this.dead = true;
     } else {
@@ -43,7 +59,26 @@ class Projectile {
     }
   }
 
+  // Độ cao "nhô lên" hiện tại của đạn arc (parabol 4·p·(1−p) đạt đỉnh ở giữa đường).
+  _arcLift() {
+    if (!this.arc || !this._arcTotal) return 0;
+    const p = Math.min(1, this._arcTraveled / this._arcTotal);
+    return this._arcHeight * 4 * p * (1 - p);
+  }
+
   _explode(game) {
+    // Mũi tên có hitChance: tung xúc xắc TRÚNG/TRƯỢT. Trượt -> nhảy text "Trượt", đạn
+    // bay xuyên qua thêm 1 đoạn ngắn rồi tắt, KHÔNG áp damage / KHÔNG gọi onHit.
+    if (this.hitChance != null && this.splash <= 0 && Math.random() >= this.hitChance) {
+      const t = this.target;
+      game.damageTexts.push(new DamageText((t ? t.x : this.x), (t ? t.y - (t.radius || 14) : this.y), 'Trượt', '#cfcfcf'));
+      this._missing = true;
+      this.target = null;
+      this.targetX = this.x + Math.cos(this.angle) * 46;
+      this.targetY = this.y + Math.sin(this.angle) * 46;
+      return;
+    }
+
     if (this.splash > 0) {
       // Nổ AOE (pháo/splash) dùng bản nổ khói+lửa đầy đủ hơn (Update 010) cho "đã tay"
       // hơn cú đánh trúng đơn lẻ bên dưới.
@@ -62,8 +97,21 @@ class Projectile {
   }
 
   draw(ctx) {
+    // Đạn pháo bay vòng cung: vẽ BÓNG ĐỔ dưới đất tại vị trí thật + nhấc thân đạn lên
+    // theo độ cao parabol để mắt đọc thành "lựu đạn được ném bổng lên rồi rơi xuống".
+    const lift = this._arcLift();
+    if (lift > 0.5) {
+      ctx.save();
+      ctx.globalAlpha = 0.28;
+      ctx.fillStyle = '#000';
+      ctx.beginPath();
+      ctx.ellipse(this.x, this.y, 7, 3.2, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
     ctx.save();
-    ctx.translate(this.x, this.y);
+    ctx.translate(this.x, this.y - lift);
     ctx.rotate(this.angle);
     if (this.sprite === 'arrow') {
       const img = AssetLoader.getImage('arrow');
@@ -187,6 +235,21 @@ class Effect {
           ctx.fillStyle = '#ff8a4d';
           ctx.beginPath(); ctx.arc(px, py, size * 0.3, 0, Math.PI * 2); ctx.fill();
         }
+      }
+    } else if (this.type === 'dust') {
+      // Khói bụi khi dọn vật cản (SpriteFX.burstDust) — dust1.png là sheet 8 khung 64px
+      // (KHÁC 192px của 'burst'), nên cần nhánh vẽ riêng.
+      const img = AssetLoader.getImage('dust1');
+      const size = this.radius * 2;
+      if (img) {
+        const fs = 64;
+        const frames = Math.max(1, Math.floor(img.width / fs));
+        const f = Math.min(frames - 1, Math.floor((1 - t) * frames));
+        ctx.globalAlpha = Math.min(1, t * 1.4);
+        ctx.drawImage(img, f * fs, 0, fs, fs, this.x - size / 2, this.y - size / 2, size, size);
+      } else {
+        ctx.fillStyle = `rgba(158,146,124,${t * 0.5})`;
+        ctx.beginPath(); ctx.arc(this.x, this.y, this.radius * (1.4 - t * 0.4), 0, Math.PI * 2); ctx.fill();
       }
     } else if (this.type === 'burst') {
       // Hiệu ứng nổ dùng animation sprite "Particle FX" (Tiny Swords), field `color`

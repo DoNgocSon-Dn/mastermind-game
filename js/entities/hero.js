@@ -200,6 +200,14 @@ class Hero {
       return;
     }
 
+    // Nội tại "Thành Trì Kiên Cố" (chỉ hero Khiên & Kiếm): tự hồi máu khi KHÔNG đang
+    // đứng đánh nhau (state Combat) — đúng như mô tả lớp tướng. this.state ở đây là
+    // giá trị của frame trước, đủ chính xác cho việc hồi máu nhẹ theo thời gian.
+    const selfRegen = this.cfg.passive && this.cfg.passive.selfRegenPerSec;
+    if (selfRegen && this.state !== 'Combat' && this.hp > 0 && this.hp < this.maxHp) {
+      this.hp = Math.min(this.maxHp, this.hp + selfRegen * dt);
+    }
+
     if (this.moveTarget && this.rootTimer <= 0) {
       // Lệnh di chuyển của người chơi LUÔN ƯU TIÊN TUYỆT ĐỐI — không còn bị việc tự
       // động giao tranh ngắt giữa chừng (trước đây hễ có quái lọt vào tầm là Hero
@@ -326,10 +334,12 @@ class Hero {
     const passive = this.cfg.passive || {};
     if (this.isRanged) {
       const crit = !!(passive.critChance && Math.random() < passive.critChance);
+      const acc = this.cfg.accuracy != null ? this.cfg.accuracy : 1;
       game.projectiles.push(new Projectile(this.x, this.y - 12, {
         target: this.target, speed: this.cfg.projectileSpeed || 420,
         damage: this.attackDamage, damageType: this.cfg.damageType || 'physical',
         sprite: 'arrow', crit, critMult: passive.critMult || 2,
+        hitChance: Math.max(0.15, acc - (this.target.evasion || 0)),
       }));
       AssetLoader.playSound('shoot', { volume: 0.3 });
     } else {

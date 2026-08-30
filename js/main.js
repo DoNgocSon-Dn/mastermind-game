@@ -74,12 +74,19 @@
   let mouseX = -1, mouseY = -1;
 
   // ---------------- Khởi tạo game mới cho 1 map ----------------
-  function createGame(mapIndex, heroType) {
+  function createGame(mapIndex, heroType, endless) {
     const map = MAPS[mapIndex];
+    const diff = Difficulty.get();
+    // Nâng cấp Nghiên Cứu (Meta) cộng dồn SAU khi đã nhân hệ số độ khó.
+    const startLives = Math.max(1, Math.round(CONFIG.economy.startLives * diff.livesMult) + Meta.startLivesBonus());
+    const startGold = Math.round(CONFIG.economy.startGold * diff.goldMult) + Meta.startGoldBonus();
     const g = {
       map, mapIndex,
-      economy: new Economy(CONFIG.economy.startGold),
-      lives: CONFIG.economy.startLives,
+      endless: !!endless,
+      difficulty: diff, // giữ tham chiếu để dùng khi tính vàng thưởng / tỉ lệ sao
+      economy: new Economy(startGold),
+      lives: startLives,
+      maxLives: startLives,
       towers: [], enemies: [], soldiers: [], projectiles: [], effects: [], damageTexts: [],
       delayedActions: [], pendingAoe: [],
       armedTowerType: null,
@@ -104,17 +111,24 @@
     const heroY = castle.y - (dy / dlen) * 50;
     g.hero = new Hero(heroX, heroY, heroType);
     g.globalSkills = new GlobalSkills(g);
+    g.ambient = new AmbientFX(map);
+    g.castle = new Castle(castle, g);
+    g.selectedCastle = false;
+    // Chế độ Vô Tận: KHÔNG dùng map.waves gốc (có boss cuối + Phân Thân chiến dịch) —
+    // bắt đầu bằng mảng rỗng rồi để endlessGen sinh từng đợt leo thang mãi.
+    const pathCount = map.paths.length;
     g.waveManager = new WaveManager(
-      map.waves,
+      endless ? [] : map.waves,
       (type, pathIndex, tunnelIndex) => spawnEnemy(g, type, pathIndex, tunnelIndex),
+      () => g.castle.onWaveStart(), // nạp lại lượt chặn của Tường Thành mỗi đợt
       () => {},
-      () => {}
+      endless ? (waveIndex) => Endless.genWave(waveIndex, pathCount) : null
     );
     return g;
   }
 
   function spawnEnemy(g, type, pathIndex, tunnelIndex) {
-    const scale = g.map.waveScaleFor(g.waveManager.waveIndex);
+    const scale = g.map.waveScaleFor(g.waveManager.waveIndex) * g.difficulty.waveScaleMult;
     const path = g.map.paths[pathIndex || 0] || g.map.waypoints;
     g.enemies.push(new Enemy(type, path, scale, tunnelIndex != null ? tunnelIndex : null));
   }
@@ -142,8 +156,16 @@
     for (const d of game.damageTexts) d.update(dt);
     game.damageTexts = game.damageTexts.filter(d => !d.dead);
 
+    // Trần an toàn cho các mảng hiệu ứng thuần thị giác — ở endless wave rất xa (200+
+    // quái) chúng có thể phình to gây giật. Bỏ bớt phần CŨ nhất (sắp tắt) — không ảnh
+    // hưởng gameplay, chỉ là vài số/đốm nổ biến mất sớm hơn 1 nhịp.
+    if (game.damageTexts.length > 140) game.damageTexts.splice(0, game.damageTexts.length - 140);
+    if (game.effects.length > 110) game.effects.splice(0, game.effects.length - 110);
+
     game.hero.update(dt, game);
     game.globalSkills.update(dt);
+    game.ambient.update(dt);
+    game.castle.update(dt, game);
 
     for (const a of game.delayedActions) a.timer -= dt;
     game.delayedActions.filter(a => a.timer <= 0).forEach(a => a.fn());
@@ -151,18 +173,27 @@
 
     updatePendingAoe(dt);
 
-    // Quái chết -> vàng; quái vào nhà -> mất mạng
+    // Quái vào thành -> mất mạng (biến mất ngay); quái bị HẠ -> thưởng vàng + pha
+    // "gục xuống" (dyingTimer) rồi mới xoá. `_deathDone` chống cộng vàng lặp mỗi frame
+    // khi quái đã chết nhưng vẫn đang trong animation gục.
     for (const e of game.enemies) {
-      if (e.dead) {
-        game.economy.earn(e.reward);
-        AssetLoader.playSound('coin', { volume: 0.25 });
-      } else if (e.reachedEnd) {
-        game.lives -= e.isBoss ? 5 : 1;
-        AssetLoader.playSound('hurt', { volume: 0.5 });
+      if (e.reachedEnd && !e.dead) {
+        if (!game.castle.absorbLeak(e)) {
+          game.lives -= e.isBoss ? 5 : 1;
+          AssetLoader.playSound('hurt', { volume: 0.5 });
+        }
         e.dead = true;
+        e._deathDone = true; // lọt vào thành: xoá ngay, không có pha gục
+      } else if (e.dead && !e._deathDone) {
+        e._deathDone = true;
+        game.economy.earn(Math.round(e.rewardOnKill * game.difficulty.rewardMult));
+        AssetLoader.playSound('coin', { volume: 0.25 });
+        e.dyingMax = e.dyingTimer = e.isBoss ? 0.85 : 0.4;
+        if (typeof SpriteFX !== 'undefined') SpriteFX.burstDust(game, e.x, e.y - e.radius * 0.3);
       }
     }
-    game.enemies = game.enemies.filter(e => !e.dead);
+    for (const e of game.enemies) if (e.dyingTimer > 0) e.dyingTimer -= dt;
+    game.enemies = game.enemies.filter(e => !e.dead || e.dyingTimer > 0);
 
     checkWinLose();
   }
@@ -194,10 +225,23 @@
 
   function endGame(win) {
     appState = STATE.RESULT;
+    // Dọn mọi SFX loop còn sót (tiếng đóng đinh của tháp đang xây dở) — nếu không
+    // nó phát tiếp cả lúc đang xem màn hình kết quả lẫn khi về Menu.
+    AssetLoader.stopAllSustained();
+
+    // ---- Chế độ VÔ TẬN: không có "thắng", chỉ có "trụ được N đợt" ----
+    if (game.endless) {
+      const wavesSurvived = Math.max(0, game.waveManager.waveIndex + 1);
+      const isRecord = Endless.reportScore(MAPS[game.mapIndex].id, wavesSurvived);
+      AssetLoader.playSound('lose', { volume: 0.7 });
+      HUD.showEndlessResult(wavesSurvived, Endless.getBest(MAPS[game.mapIndex].id), isRecord);
+      return;
+    }
+
     let stars = 0;
     let newlyUnlocked = false;
     if (win) {
-      const ratio = game.lives / CONFIG.economy.startLives;
+      const ratio = game.lives / (game.maxLives || CONFIG.economy.startLives);
       stars = ratio > 0.8 ? 3 : ratio > 0.4 ? 2 : 1;
       const before = SaveSystem.load(MAPS.length);
       newlyUnlocked = game.mapIndex + 1 < MAPS.length && !before.maps[game.mapIndex + 1].unlocked;
@@ -220,6 +264,7 @@
     game.map.drawTunnels(ctx);
     game.map.drawPathGates(ctx, game.waveManager.waveIndex);
     game.map.drawSpawnAndBase(ctx);
+    game.ambient.drawGround(ctx); // bóng mây quét trên đất — dưới chân quái/tháp
 
     // Vẽ tháp/lính/Hero/quái CÙNG cây/bụi/đá/nhà/vật cản theo thứ tự Y (painter's
     // algorithm) để vật ở hàng dưới (y lớn hơn) luôn đè lên vật hàng trên — tránh
@@ -234,6 +279,10 @@
     layered.sort((a, b) => a.y - b.y);
     for (const ent of layered) ent.draw(ctx);
 
+    // Pháo + hào quang Tường Thành — vẽ SAU lớp entity (pháo gắn cao trên tường, luôn
+    // nổi trên đầu quái đang tràn vào cổng). Thân thành do map.drawSpawnAndBase() vẽ.
+    game.castle.draw(ctx);
+
     // Vẽ SAU CÙNG lớp y-sort ở trên để huy hiệu "Bấm để thả quái" luôn nổi rõ,
     // không bị tháp/cây/quái đứng gần điểm ra quân che mất (xem map.js:drawWaveReadyBadges).
     game.map.drawWaveReadyBadges(ctx, { waveReady: canCallWave(), hoverX: mouseX, hoverY: mouseY });
@@ -244,6 +293,16 @@
     for (const fx of game.effects) fx.draw(ctx);
     for (const d of game.damageTexts) d.draw(ctx);
 
+    // Không khí (mây trôi + hạt rơi theo mùa + vignette nhuộm tông) — trên cảnh
+    // nhưng DƯỚI các vòng tầm bắn / preview đặt tháp để mấy thứ đó vẫn sắc nét.
+    game.ambient.drawSky(ctx);
+
+    if (game.selectedCastle && game.castle.cannonStats) {
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255,200,120,0.7)'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(game.castle.gunX, game.castle.gunY, game.castle.cannonStats.range, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+    }
     if (game.selectedTower) drawRangeRing(game.selectedTower);
     if (game.hoveredTower && game.hoveredTower !== game.selectedTower) drawRangeRing(game.hoveredTower);
     if (game.armedTowerType && mouseX >= 0) drawBuildPreview();
@@ -283,6 +342,13 @@
     ctx.strokeStyle = 'rgba(120,220,255,0.8)';
     ctx.lineWidth = 2;
     ctx.beginPath(); ctx.arc(tower.x, tower.y, tower.range, 0, Math.PI * 2); ctx.stroke();
+    // Điểm mù của Pháo Đài — vòng đỏ nét đứt bên trong: quái vào đây pháo không bắn được.
+    if (tower.minRange > 0) {
+      ctx.strokeStyle = 'rgba(255,90,70,0.85)';
+      ctx.setLineDash([5, 4]);
+      ctx.beginPath(); ctx.arc(tower.x, tower.y, tower.minRange, 0, Math.PI * 2); ctx.stroke();
+      ctx.setLineDash([]);
+    }
     ctx.restore();
   }
 
@@ -345,6 +411,13 @@
       ctx.beginPath();
       ctx.arc(mouseX, mouseY, cfg.levels[0].range, 0, Math.PI * 2);
       ctx.stroke();
+      // Điểm mù (Pháo Đài) — vòng đỏ nét đứt bên trong.
+      if (cfg.minRange) {
+        ctx.strokeStyle = '#ff6a5a';
+        ctx.setLineDash([5, 4]);
+        ctx.beginPath(); ctx.arc(mouseX, mouseY, cfg.minRange, 0, Math.PI * 2); ctx.stroke();
+        ctx.setLineDash([]);
+      }
     }
 
     ctx.restore();
@@ -474,6 +547,15 @@
       return;
     }
 
+    // Toà thành — bấm để mở bảng nâng cấp Pháo Thành / Tường Thành.
+    if (game.castle.hitTest(p.x, p.y) && !towerAt(p)) {
+      const wasSel = game.selectedCastle;
+      deselectTower();
+      game.selectedCastle = !wasSel;
+      AssetLoader.playSound('select', { volume: 0.5 });
+      return;
+    }
+
     // Chọn tháp đã xây (kể cả Barracks để đặt lại Rally Point) — CHỈ cho chọn khi không điều khiển Hero.
     const clicked = towerAt(p);
     if (clicked) {
@@ -546,6 +628,7 @@
 
   function deselectTower() {
     game.selectedTower = null;
+    game.selectedCastle = false;
     game.towers.forEach(t => t.selected = false);
   }
 
@@ -567,14 +650,17 @@
   }
 
   // ---------------- Wiring UI <-> State machine ----------------
-  function startLevel(mapIndex, heroType) {
+  function startLevel(mapIndex, heroType, endless) {
     const targetMap = MAPS[mapIndex] || MAPS[0];
     const mapName = targetMap ? targetMap.name : 'Bản Đồ';
-    showLoadingScreen(`Đang vào trận — ${mapName}`, { autoFill: true });
+    showLoadingScreen(`Đang vào trận — ${mapName}${endless ? ' · Vô Tận' : ''}`, { autoFill: true });
+    // Ngắt mọi SFX loop của trận CŨ (tiếng đóng đinh tháp đang xây) trước khi dựng
+    // trận mới — bao trọn cả nhánh "Chơi lại" từ menu Tạm Dừng (không đi qua endGame).
+    AssetLoader.stopAllSustained();
     // Không có tài nguyên thật để chờ (map/hero dựng tức thời) — trễ giả 0.7s để
     // kịp thấy màn chuyển cảnh thay vì chớp tắt ngay, đồng bộ với animation thanh chạy.
     setTimeout(() => {
-      game = createGame(mapIndex, heroType);
+      game = createGame(mapIndex, heroType, endless);
       appState = STATE.PLAYING;
       document.getElementById('game-container').classList.remove('hidden');
       document.getElementById('screen-menu').classList.add('hidden');
@@ -590,12 +676,15 @@
       // systems/wave.js) trong lúc bảng chỉ dẫn/thông báo cơ chế còn hiện — người
       // chơi bấm đóng hết mới thật sự tính là "vào trận".
       game.paused = true;
-      GuideUI.showQueue(mapIndex, () => { game.paused = false; });
+      // Vô Tận: bỏ qua thông báo cơ chế riêng của map (hầm/đổi đường... không dùng
+      // trong wave vô tận), chỉ hiện bảng hướng dẫn chung nếu chưa từng xem.
+      GuideUI.showQueue(endless ? null : mapIndex, () => { game.paused = false; });
     }, LOADING_AUTOFILL_MS);
   }
 
   function exitToLevelSelect() {
     appState = STATE.LEVEL_SELECT;
+    AssetLoader.stopAllSustained(); // ngắt tiếng đóng đinh của tháp đang xây dở khi thoát trận
     document.getElementById('game-container').classList.add('hidden');
     setPlayingChrome(false);
     MenuUI.showLevelSelect();
@@ -621,7 +710,7 @@
       game.waveManager.setAutoAdvance(!game.waveManager.autoAdvance);
     },
     onExit: () => exitToLevelSelect(),
-    onRestart: () => startLevel(game.mapIndex, game.hero.heroType),
+    onRestart: () => startLevel(game.mapIndex, game.hero.heroType, game.endless),
     onNextLevel: () => startLevel(game.mapIndex + 1, game.hero.heroType),
     onArmTower: (type) => {
       if (isHeroMoving()) { AssetLoader.playSound('error'); return; }
@@ -634,6 +723,13 @@
       deselectTower();
     },
     onCloseTowerPanel: () => deselectTower(),
+    onUpgradeCastle: (track) => {
+      if (isHeroMoving()) { AssetLoader.playSound('error'); return; }
+      const ok = track === 'cannon'
+        ? game.castle.upgradeCannon(game.economy)
+        : game.castle.upgradeWall(game.economy);
+      AssetLoader.playSound(ok ? 'upgrade' : 'error');
+    },
     onUpgradeTower: (tower) => {
       if (isHeroMoving()) { AssetLoader.playSound('error'); return; }
       if (tower.upgrade(game.economy)) AssetLoader.playSound('upgrade');
@@ -665,10 +761,15 @@
   MenuUI.init({
     onPlayClicked: () => { appState = STATE.LEVEL_SELECT; MenuUI.showLevelSelect(); },
     onLevelSelected: (idx) => HeroSelectUI.show(idx),
+    onResearchClicked: () => { document.getElementById('screen-menu').classList.add('hidden'); ResearchUI.show(); },
+  });
+
+  ResearchUI.init({
+    onBackToMenu: () => { ResearchUI.hide(); MenuUI.showMainMenu(); },
   });
 
   HeroSelectUI.init({
-    onHeroChosen: (mapIndex, heroType) => startLevel(mapIndex, heroType),
+    onHeroChosen: (mapIndex, heroType, endless) => startLevel(mapIndex, heroType, endless),
     onBackToLevels: () => { HeroSelectUI.hide(); MenuUI.showLevelSelect(); },
   });
 
@@ -678,6 +779,20 @@
       HeroSelectUI.show(99);
     },
   });
+
+  // ---------------- Hook gỡ lỗi ----------------
+  // Chỉ phục vụ dev/test. Điểm quan trọng nhất: __td.tick(n) chạy N bước update THẲNG
+  // (không chờ requestAnimationFrame) — cần khi tab bị trình duyệt throttle làm game
+  // loop gần như đứng, không test được bằng chờ thời gian thực. Xem systems/debug.js
+  // cho lớp phủ FPS/đếm entity (chỉ hiện khi Dev Mode bật).
+  window.__td = {
+    get game() { return game; },
+    get state() { return appState; },
+    STATE,
+    tick(n = 1, dt = 1 / 60) { for (let i = 0; i < n; i++) if (appState === STATE.PLAYING) update(dt); },
+    frame() { if (appState === STATE.PLAYING) { render(); HUD.update(game); } },
+    spawn(type, path = 0) { if (game) spawnEnemy(game, type, path, null); },
+  };
 
   // ---------------- Boot ----------------
   async function boot() {

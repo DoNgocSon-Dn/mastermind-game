@@ -10,8 +10,9 @@ class GlobalSkills {
   }
 
   cooldownRatio(key) {
-    const max = CONFIG.globalSkills[key].cooldown;
-    return Math.max(0, this.cooldowns[key]) / max;
+    // dùng cooldown ĐÃ giảm bởi Nghiên Cứu làm mốc 100% để vòng hồi chiêu đầy đúng.
+    const max = CONFIG.globalSkills[key].cooldown * Meta.globalCdMult();
+    return Math.max(0, this.cooldowns[key]) / (max || 1);
   }
 
   isReady(key) { return this.cooldowns[key] <= 0; }
@@ -28,7 +29,8 @@ class GlobalSkills {
     this.pendingActivation = null;
     if (key === 'reinforcement') this._castReinforcement(x, y);
     if (key === 'rainOfFire') this._castRainOfFire(x, y);
-    this.cooldowns[key] = CONFIG.globalSkills[key].cooldown;
+    // Nghiên Cứu "Bí Thuật Cổ Xưa" giảm hồi chiêu global skill.
+    this.cooldowns[key] = CONFIG.globalSkills[key].cooldown * Meta.globalCdMult();
     return true;
   }
 

@@ -27,7 +27,7 @@ class Enemy {
     // Chiều cao THẬT của sinh vật trên màn hình (không phải cạnh khung sprite) — dùng
     // để đặt thanh máu/icon trạng thái ngay trên đầu, nên phải khớp với sprite mới.
     const baseVisualSize = {
-      normal: 30, fast: 26, tank: 30, flying: 24, boss: 52,
+      normal: 30, fast: 26, tank: 30, flying: 24, boss: 52, bossMini: 44,
       bossSpring: 56, bossSummer: 52, bossAutumn: 46, bossWinter: 48,
       splitter: 34, splitling: 22,
     }[type] || 32;
@@ -50,6 +50,13 @@ class Enemy {
     this.reachedEnd = false;
     this.hasSplit = false; // chỉ dùng cho type 'splitter' — đảm bảo mỗi con chỉ tách 1 lần
     this.hitFlash = 0;
+    // Né tránh (Evasion) — xác suất tháp Cung THỦ (mũi tên vật lý) bắn trượt con này.
+    // Quái nhỏ + chạy nhanh né giỏi; quái trâu/boss gần như không né. Xem projectile.js.
+    this.evasion = base.evasion || 0;
+    // Pha "gục xuống" khi bị hạ: quái không biến mất tức thì mà đổ nghiêng + mờ dần
+    // trong dyingMax giây rồi mới bị xoá (xem main.js update + draw() bên dưới).
+    this.dyingTimer = 0;
+    this.dyingMax = 0;
     this.progress = 0; // 0..1 dọc theo path, dùng để chọn mục tiêu ưu tiên
 
     // Trạng thái đặc biệt
@@ -63,8 +70,8 @@ class Enemy {
     // mục tiêu đúng nhịp mỗi lần ra đòn để người chơi NHÌN THẤY nó phản đòn.
     this.attackPulse = 0;
 
-    // Boss hành vi đặc biệt
-    this.healCycle = base.isBoss ? 8 : 0;
+    // Boss hành vi đặc biệt — bossMini (noRegen) KHÔNG tự hồi máu.
+    this.healCycle = (base.isBoss && !base.noRegen) ? 8 : 0;
     this.healTimer = this.healCycle;
     this.bossAbility = base.bossAbility || null; // {type, cooldown, ...} — 4 boss theo mùa
     this.abilityTimer = this.bossAbility ? this.bossAbility.cooldown : 0;
@@ -107,11 +114,24 @@ class Enemy {
   get isPolymorphed() { return this.polymorphTimer > 0; }
   get isRooted() { return this.rootTimer > 0; }
 
+  // Vàng nhận khi HẠ được con này. Bình thường = this.reward; riêng splitter nếu bị
+  // giết TRƯỚC khi kịp tách (hasSplit=false) thì trả preKillReward thay cho 0 — để
+  // giết sớm 1 splitter máu trâu không còn "công cốc" (xem CONFIG.enemies.splitter).
+  get rewardOnKill() {
+    if (this.type === 'splitter' && !this.hasSplit) {
+      return CONFIG.enemies.splitter.preKillReward || 0;
+    }
+    return this.reward;
+  }
+
   applyRoot(duration) { this.rootTimer = Math.max(this.rootTimer, duration); }
   applyPoison(dmgPerTick, duration, tickInterval) {
     this.poison = { dmgPerTick, tickTimer: tickInterval, tickInterval, timeLeft: duration };
   }
-  applyPolymorph(duration) { this.polymorphTimer = Math.max(this.polymorphTimer, duration); }
+  applyPolymorph(duration) {
+    if (this.isBoss) return; // boss miễn nhiễm hoá cừu
+    this.polymorphTimer = Math.max(this.polymorphTimer, duration);
+  }
   pushBack(amount) {
     this.traveled = Math.max(0, this.traveled - amount);
     this._relocateAlongPath();
@@ -202,13 +222,31 @@ class Enemy {
       }
       if (this.poison.timeLeft <= 0) this.poison = null;
     }
+    // Độc (hoặc bất kỳ hiệu ứng nào ở trên) vừa hạ gục quái -> dừng update ngay,
+    // không chạy nốt phần di chuyển/tách phân thân của 1 con đã chết.
+    if (this.dead) return;
 
-    // Boss: tự hồi máu định kỳ + tăng tốc khi máu thấp
+    // Hoá cừu (Polymorph — Sorcerer 4B): đứng chôn chân, KHÔNG đánh trả, KHÔNG dùng
+    // chiêu boss, mất giáp/kháng (xử lý ở DamageSystem.calc). Đúng nghĩa "vô hại tạm thời".
+    if (this.isPolymorphed) {
+      if (this.engagedBy) {
+        const s = this.engagedBy;
+        if (s.target !== this || s.state === 'Dead' || s.removed) this.engagedBy = null;
+        else this.facingLeft = s.x < this.x;
+      }
+      this._animate(dt, false);
+      return;
+    }
+
+    // Boss: tự hồi máu định kỳ (chỉ khi healCycle > 0 — bossMini không hồi) + tăng
+    // tốc khi máu thấp.
     if (this.isBoss) {
-      this.healTimer -= dt;
-      if (this.healTimer <= 0) {
-        this.healTimer = this.healCycle;
-        this.hp = Math.min(this.maxHp, this.hp + Math.round(this.maxHp * 0.03));
+      if (this.healCycle > 0) {
+        this.healTimer -= dt;
+        if (this.healTimer <= 0) {
+          this.healTimer = this.healCycle;
+          this.hp = Math.min(this.maxHp, this.hp + Math.round(this.maxHp * 0.03));
+        }
       }
       this.speed = this.hp < this.maxHp * 0.3 ? this.baseSpeed * 1.6 : this.baseSpeed;
     }
@@ -367,11 +405,21 @@ class Enemy {
     // quái trông như vừa nhảy/rơi xuống điểm spawn, không phải hiện ra tức thì.
     const dropping = this.spawnDropTimer > 0;
     const dropT = dropping ? this.spawnDropTimer / this.spawnDropDuration : 0;
+    // Pha gục xuống khi chết: k chạy 0 (vừa chết) -> 1 (sắp bị xoá).
+    const dying = this.dyingTimer > 0;
+    const deathK = dying ? 1 - this.dyingTimer / this.dyingMax : 0;
 
     ctx.save();
-    ctx.globalAlpha = dropping ? Math.min(1, (1 - dropT) * 1.6 + 0.25) : 1;
+    ctx.globalAlpha = dropping ? Math.min(1, (1 - dropT) * 1.6 + 0.25) : (dying ? Math.max(0, 1 - deathK) : 1);
     ctx.translate(this.x, this.y - (dropping ? dropT * dropT * this.spawnDropHeight : 0));
     if (this.facingLeft) ctx.scale(-1, 1);
+    if (dying) {
+      // Đổ nghiêng quanh CHÂN + bẹp dần theo trục đứng — như vừa ngã gục xuống đất.
+      ctx.translate(0, this.radius * 0.42);
+      ctx.rotate(deathK * 1.2);
+      ctx.scale(1 + deathK * 0.12, Math.max(0.28, 1 - deathK * 0.55));
+      ctx.translate(0, -this.radius * 0.42);
+    }
     // Quái không có sprite "đánh" riêng (asset pack chỉ có Idle/Run) nên không thể
     // phát đúng animation vung vũ khí thật — attackPulse giả lập khoảnh khắc va chạm
     // bằng cách nghiêng + nhô người + bẹp nhẹ theo thân (như vừa giáng 1 đòn xuống)
@@ -413,7 +461,7 @@ class Enemy {
     }
     ctx.restore();
 
-    if (dropping) return;
+    if (dropping || dying) return; // đang gục: bỏ thanh máu + icon trạng thái
     if (this.isFlying) this._drawFlyingShadow(ctx);
     this._drawHpBar(ctx);
     if (this.isRooted) this._drawStatusIcon(ctx, '🧊');
@@ -450,6 +498,8 @@ class Enemy {
       tank: { idle: 'enemyTankIdle', run: 'enemyTankRun', frame: 320, size: 107, cxN: 0.519, botN: 0.650 },
       flying: { idle: 'enemyFlyingIdle', run: 'enemyFlyingRun', frame: 192, size: 64, cxN: 0.477, botN: 0.703 },
       boss: { idle: 'enemyBossIdle', run: 'enemyBossRun', frame: 320, size: 128, cxN: 0.411, botN: 0.669 },
+      // bossMini: mượn sprite Minotaur như boss chung, khung nhỏ hơn 1 chút.
+      bossMini: { idle: 'enemyBossIdle', run: 'enemyBossRun', frame: 320, size: 104, cxN: 0.411, botN: 0.669 },
       bossSpring: { idle: 'bossSpringIdle', run: 'bossSpringRun', frame: 384, size: 104, cxN: 0.526, botN: 0.773 },
       bossSummer: { idle: 'bossSummerIdle', run: 'bossSummerRun', frame: 320, size: 128, cxN: 0.411, botN: 0.669 },
       bossAutumn: { idle: 'bossAutumnIdle', run: 'bossAutumnRun', frame: 192, size: 118, cxN: 0.505, botN: 0.677 },

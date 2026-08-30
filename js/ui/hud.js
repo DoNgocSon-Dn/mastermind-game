@@ -20,6 +20,7 @@ const HUD = (() => {
     els.enemiesLeft = document.getElementById('hud-enemies');
     els.speedGroup = document.getElementById('speed-group');
     els.towerPanel = document.getElementById('tower-panel');
+    els.castlePanel = document.getElementById('castle-panel');
     els.branchInfoPanel = document.getElementById('branch-info-panel');
     els.skillsPanel = document.getElementById('skills-panel');
     els.armedBanner = document.getElementById('armed-banner');
@@ -136,8 +137,7 @@ const HUD = (() => {
   function setArmedTower(type) {
     document.querySelectorAll('.build-btn').forEach(b => b.classList.toggle('armed', b.dataset.type === type));
     if (type) {
-      const cfg = CONFIG.towers[type];
-      els.armedBanner.textContent = `Đang đặt ${cfg.label} — click vào bản đồ để xây (Esc để huỷ)`;
+      els.armedBanner.textContent = 'Bấm bản đồ để xây · Esc huỷ';
       els.armedBanner.classList.remove('hidden');
     } else {
       els.armedBanner.classList.add('hidden');
@@ -147,7 +147,7 @@ const HUD = (() => {
   function setPendingSkill(key) {
     document.querySelectorAll('.skill-btn').forEach(b => b.classList.toggle('pending', b.dataset.key === key));
     if (key) {
-      els.armedBanner.textContent = `Chọn vị trí trên bản đồ để dùng ${CONFIG.globalSkills[key].name}`;
+      els.armedBanner.textContent = 'Bấm vùng để dùng skill · Esc huỷ';
       els.armedBanner.classList.remove('hidden');
     } else if (!document.querySelector('.build-btn.armed')) {
       els.armedBanner.classList.add('hidden');
@@ -157,7 +157,7 @@ const HUD = (() => {
   // Đã CHỌN Hero, đang chờ bấm điểm đến trên bản đồ để ra lệnh di chuyển.
   function setHeroArmed(v) {
     if (v) {
-      els.armedBanner.textContent = 'Đã chọn Hero — bấm vào bản đồ để di chuyển tới đó (bấm lại vào Hero để huỷ)';
+      els.armedBanner.textContent = 'Bấm bản đồ để di chuyển Tướng';
       els.armedBanner.classList.remove('hidden');
     } else if (!document.querySelector('.build-btn.armed')) {
       els.armedBanner.classList.add('hidden');
@@ -166,7 +166,7 @@ const HUD = (() => {
 
   function update(game) {
     if (game.hero && game.hero.alive && game.hero.moveTarget !== null) {
-      els.armedBanner.textContent = '🚶 Tướng đang di chuyển... (Đang khóa các thao tác khác cho tới khi tới nơi)';
+      els.armedBanner.textContent = '🚶 Tướng đang di chuyển…';
       els.armedBanner.classList.remove('hidden');
     } else if (!game.armedTowerType && !game.globalSkills.pendingActivation && !game.hero.selected) {
       els.armedBanner.classList.add('hidden');
@@ -179,23 +179,29 @@ const HUD = (() => {
     }
     lastGold = game.economy.gold;
     els.lives.textContent = game.lives;
-    els.wave.textContent = `${game.waveManager.currentWaveNumber}/${game.waveManager.totalWaves}`;
-    els.mapName.textContent = game.map.name;
+    els.wave.textContent = game.endless
+      ? `${Math.max(1, game.waveManager.currentWaveNumber)} 🔁`
+      : `${game.waveManager.currentWaveNumber}/${game.waveManager.totalWaves}`;
     els.btnPause.textContent = game.paused ? '▶' : '⏸';
     els.speedGroup.querySelectorAll('.speed-btn').forEach(b => {
       b.classList.toggle('active', Number(b.dataset.speed) === game.speed);
     });
 
-    // Banner giữa trên: trạng thái trận theo ngữ cảnh (giống "Chuẩn bị · 2s" của mẫu)
+    // Banner giữa trên — GỌN LẠI: bỏ tên map (vừa chọn xong, thừa). Chỉ hiện thứ THẬT
+    // SỰ đáng chú ý: lời nhắc "gọi đợt sau" + số quái còn lại lúc đang đánh. Các trạng
+    // thái hiển nhiên ("Đang giao tranh", "Chuẩn bị") không hiện chữ.
     const wm = game.waveManager;
     const alive = game.enemies.length;
-    let status;
-    if (game.paused) status = 'Tạm dừng';
-    else if (wm.currentWaveNumber === 0) status = 'Chuẩn bị';
-    else if (wm.waitingForConfirm) status = alive > 0 ? 'Đang dọn quái' : 'Sẵn sàng đợt sau';
-    else status = 'Đang giao tranh';
-    els.status.textContent = status;
-    els.enemiesLeft.textContent = `Địch còn lại: ${alive}`;
+    const badge = (game.difficulty && game.difficulty.id !== 'normal') ? game.difficulty.badge + ' ' : '';
+    let main = '';
+    if (game.paused) main = 'Tạm dừng';
+    else if (wm.waitingForConfirm && alive === 0 && !wm.finishedAllSpawns) main = '▸ Gọi đợt tiếp theo';
+    els.status.textContent = badge + main;
+    els.status.classList.toggle('hidden', !(badge || main));
+    // Số quái: chỉ khi đang có quái trên bản đồ.
+    els.enemiesLeft.textContent = alive > 0 ? `Địch còn lại: ${alive}` : '';
+    els.enemiesLeft.classList.toggle('hidden', alive === 0);
+    els.mapName.classList.add('hidden');
 
     const autoAdvance = game.waveManager.autoAdvance;
     els.btnSpawnMode.textContent = autoAdvance ? '⏹' : '⏩';
@@ -242,12 +248,45 @@ const HUD = (() => {
     if (game.selectedTower) renderTowerPanel(game, game.selectedTower);
     else els.towerPanel.classList.add('hidden');
 
+    if (game.selectedCastle) renderCastlePanel(game);
+    else { els.castlePanel.classList.add('hidden'); _lastCastleSig = null; }
+
     // Tháp đang CHỌN cũng hiện thanh chỉ số dưới đáy màn hình (không chỉ lúc hover) —
     // vì panel nổi giờ chỉ còn 2 nút hành động, không còn chỗ hiện chỉ số nữa.
     renderHoverBar(game.hoveredTower || game.selectedTower);
 
     if (game.selectedTower && game.selectedTower.canChooseBranch) renderBranchInfo(game.selectedTower);
     else els.branchInfoPanel.classList.add('hidden');
+  }
+
+  // Bảng nâng cấp Toà Thành — 2 hàng (Pháo Thành / Tường Thành). Chỉ dựng lại khi
+  // cấp đổi hoặc mốc vàng đổi (đủ/không đủ tiền nút bật/tắt).
+  let _lastCastleSig = null;
+  function renderCastlePanel(game) {
+    const c = game.castle;
+    const gold = game.economy.gold;
+    const cCost = c.nextCannonCost, wCost = c.nextWallCost;
+    const sig = [c.cannonLevel, c.wallLevel, (cCost != null && gold >= cCost) ? 1 : 0, (wCost != null && gold >= wCost) ? 1 : 0].join('|');
+    els.castlePanel.classList.remove('hidden');
+    if (sig === _lastCastleSig) return;
+    _lastCastleSig = sig;
+
+    const row = (id, icon, name, level, maxLevel, cost, verb) => {
+      const lvTxt = level > 0 ? ` Lv.${level}` : '';
+      if (level >= maxLevel) {
+        return `<div class="cp-row"><span class="cp-name">${icon} ${name}${lvTxt}</span><span class="cp-max">★ MAX</span></div>`;
+      }
+      return `<div class="cp-row"><span class="cp-name">${icon} ${name}${lvTxt}</span>` +
+        `<button id="${id}" class="cp-btn" ${gold < cost ? 'disabled' : ''}>${verb} ${cost}<span class="icon-inline coin"></span></button></div>`;
+    };
+
+    els.castlePanel.innerHTML =
+      `<div class="cp-title">🏰 Toà Thành</div>` +
+      row('cp-cannon', '🎯', 'Pháo Thành', c.cannonLevel, CONFIG.castle.cannon.length, cCost, c.cannonLevel > 0 ? 'Nâng' : 'Xây') +
+      row('cp-wall', '🛡️', 'Tường Thành', c.wallLevel, CONFIG.castle.wall.length, wCost, c.wallLevel > 0 ? 'Nâng' : 'Xây');
+
+    const cbn = document.getElementById('cp-cannon'); if (cbn) cbn.onclick = () => cb.onUpgradeCastle('cannon');
+    const cbw = document.getElementById('cp-wall'); if (cbw) cbw.onclick = () => cb.onUpgradeCastle('wall');
   }
 
   // Bảng so sánh nhanh nhánh A/B — chỉ dựng lại khi đổi tháp (nội dung tĩnh theo
@@ -394,12 +433,27 @@ const HUD = (() => {
     el.classList.add(win ? 'win' : 'lose');
     document.getElementById('result-title').textContent = win ? '🏆 CHIẾN THẮNG' : '💀 THẤT BẠI';
     document.getElementById('result-stars').textContent = win ? '★'.repeat(stars) + '☆'.repeat(3 - stars) : '';
-    document.getElementById('result-desc').textContent = win ? `Bạn đã giữ vững thành trì với ${livesLeft} mạng còn lại!` : 'Thành trì đã thất thủ... Hãy nâng cấp tháp và thử lại!';
+    const diffTag = (typeof Difficulty !== 'undefined' && Difficulty.id !== 'normal') ? ` (${Difficulty.get().badge} ${Difficulty.get().label})` : '';
+    document.getElementById('result-desc').textContent = win ? `Bạn đã giữ vững thành trì với ${livesLeft} mạng còn lại!${diffTag}` : `Thành trì đã thất thủ... Hãy nâng cấp tháp và thử lại!${diffTag}`;
     // Thắng mới có màn kế tiếp để đi tiếp luôn — thua thì chỉ có Chơi lại/Về Level
     // Select (còn màn hiện tại chưa qua được, "màn tiếp theo" không có nghĩa gì cả).
     els.btnResultNext.classList.toggle('hidden', !(win && hasNextLevel));
   }
   function hideResult() { document.getElementById('overlay-result').classList.add('hidden'); }
 
-  return { init, update, setHero, setArmedTower, setPendingSkill, setHeroArmed, showPauseOverlay, showResult, hideResult };
+  // Kết quả chế độ VÔ TẬN — không có sao, chỉ có "trụ được N đợt" + kỷ lục.
+  function showEndlessResult(waves, best, isRecord) {
+    const el = document.getElementById('overlay-result');
+    el.classList.remove('hidden', 'win', 'lose');
+    el.classList.add('lose');
+    document.getElementById('result-title').textContent = isRecord ? '🏅 KỶ LỤC MỚI!' : '🔁 KẾT THÚC';
+    document.getElementById('result-stars').textContent = `Đợt ${waves}`;
+    const diffTag = (typeof Difficulty !== 'undefined' && Difficulty.id !== 'normal') ? ` · ${Difficulty.get().badge} ${Difficulty.get().label}` : '';
+    document.getElementById('result-desc').textContent = isRecord
+      ? `Bạn đã trụ được ${waves} đợt — kỷ lục mới!${diffTag}`
+      : `Trụ được ${waves} đợt. Kỷ lục: ${best} đợt.${diffTag}`;
+    els.btnResultNext.classList.add('hidden');
+  }
+
+  return { init, update, setHero, setArmedTower, setPendingSkill, setHeroArmed, showPauseOverlay, showResult, showEndlessResult, hideResult };
 })();

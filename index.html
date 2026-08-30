@@ -26,8 +26,23 @@
       <div class="cloud cloud-3"></div>
       <div class="cloud cloud-4"></div>
     </div>
+
+    <!-- Đom đóm bay lơ lửng trên nền trời -->
+    <div class="menu-fireflies">
+      <i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+    </div>
+
+    <!-- Bóng thành trì phía chân trời (sau dải diễu hành) -->
+    <div class="menu-skyline">
+      <span class="sky-tower t1"></span>
+      <span class="sky-castle"></span>
+      <span class="sky-tower t2"></span>
+      <span class="sky-tower t3"></span>
+    </div>
+
     <!-- Dải diễu hành Menu chính — 3 hero diễu hành chân chạm đúng đường đất -->
     <div class="hero-parade">
+      <div class="parade-trees-far"></div>
       <div class="parade-ground-path"></div>
       <div class="parade-trees"></div>
 
@@ -39,18 +54,30 @@
         <div class="decor-item decor-bush"></div>
       </div>
 
+      <!-- Quái goblin bỏ chạy phía trước đội hình -->
+      <div class="parade-runner"></div>
+
       <!-- Đội hình 3 Hero chính (Cung thủ, Lính giáo, Khiên) chân chạm đất, căn giữa hoàn hảo -->
       <div class="parade-heroes">
-        <div class="parade-hero parade-hero-archer"></div>
-        <div class="parade-hero parade-hero-spear"></div>
-        <div class="parade-hero parade-hero-tank"></div>
+        <div class="parade-hero parade-hero-archer"><span class="foot-dust"></span></div>
+        <div class="parade-hero parade-hero-spear"><span class="foot-dust"></span></div>
+        <div class="parade-hero parade-hero-tank"><span class="foot-dust"></span></div>
       </div>
     </div>
-    <h1>MasterMind</h1>
-    <div class="subtitle">Tower Defense Pixel 2D</div>
-    <button class="menu-btn" id="btn-play">▶ Chơi</button>
-    <button class="menu-btn secondary hidden" id="btn-mapeditor-menu">🛠️ Tự Làm Map</button>
-    <button class="menu-btn secondary" id="btn-settings"><span class="icon-inline gear"></span> Cài đặt</button>
+
+    <div class="menu-titleblock">
+      <div class="title-crown">⚔</div>
+      <h1>THỦ THÀNH</h1>
+      <div class="subtitle">Pixel Tower Defense · 16 màn · 4 mùa</div>
+    </div>
+
+    <div class="menu-buttons">
+      <button class="menu-btn" id="btn-play">▶&ensp;Chơi</button>
+      <button class="menu-btn secondary" id="btn-research">🔬&ensp;Nghiên Cứu <span id="research-badge" class="hidden"></span></button>
+      <button class="menu-btn secondary hidden" id="btn-mapeditor-menu">🛠️&ensp;Tự Làm Map</button>
+      <button class="menu-btn secondary" id="btn-settings"><span class="icon-inline gear"></span>&ensp;Cài đặt</button>
+    </div>
+    <div class="menu-version">v1.0 · pixel-art</div>
     <div id="settings-panel" class="hidden">
       <label><input type="checkbox" id="chk-mute"> Tắt âm thanh</label>
       <label><span class="icon-inline music"></span> Âm lượng <input type="range" id="rng-volume" min="0" max="1" step="0.05" value="0.6"></label>
@@ -147,6 +174,20 @@
     </div>
   </div>
 
+  <!-- Nghiên Cứu — nâng cấp vĩnh viễn mua bằng sao tích luỹ -->
+  <div id="screen-research" class="screen hidden">
+    <div class="cloud-layer">
+      <div class="cloud cloud-1"></div>
+      <div class="cloud cloud-2"></div>
+      <div class="cloud cloud-3"></div>
+      <div class="cloud cloud-4"></div>
+    </div>
+    <button class="menu-btn secondary btn-compact" id="research-back">← Menu</button>
+    <h2>🔬 Nghiên Cứu</h2>
+    <div id="research-points"></div>
+    <div id="research-list"></div>
+  </div>
+
   <!-- Hero Select — hiện sau khi chọn map, trước khi vào trận -->
   <div id="screen-heroselect" class="screen hidden">
     <div class="cloud-layer">
@@ -157,6 +198,16 @@
     </div>
     <button class="menu-btn secondary btn-compact" id="back-to-levelselect">← Chọn Màn</button>
     <h2>Chọn Tướng</h2>
+    <div id="difficulty-select">
+      <span class="diff-label">Độ khó</span>
+      <div class="diff-buttons" id="diff-buttons"></div>
+      <span class="diff-hint" id="diff-hint"></span>
+    </div>
+    <div id="mode-select" class="hidden">
+      <span class="diff-label">Chế độ</span>
+      <div class="diff-buttons" id="mode-buttons"></div>
+      <span class="diff-hint" id="mode-hint"></span>
+    </div>
     <div id="hero-list"></div>
   </div>
 
@@ -187,12 +238,12 @@
       </div>
     </div>
 
-    <!-- Banner giữa trên: tên màn (nhãn nhỏ) + trạng thái hiện tại (chữ lớn) + dòng
-         phụ đếm quái còn lại — tách khỏi dải tài nguyên như ảnh mẫu. -->
-    <div id="hud-banner" class="ui-frame">
-      <div class="banner-sub" id="hud-map-name">—</div>
-      <div class="banner-main" id="hud-status">Chuẩn bị</div>
-      <div class="banner-note" id="hud-enemies">Địch còn lại: 0</div>
+    <!-- Banner giữa trên — tối giản: chỉ chữ nổi (không khung), phần lớn thời gian
+         trống. Chỉ hiện lời nhắc "gọi đợt" + số quái còn lại lúc đang đánh. -->
+    <div id="hud-banner">
+      <div class="banner-sub hidden" id="hud-map-name"></div>
+      <div class="banner-main" id="hud-status"></div>
+      <div class="banner-note" id="hud-enemies"></div>
     </div>
 
     <div id="hud-controls" class="ui-frame">
@@ -213,6 +264,9 @@
     <div id="tower-hover-bar" class="hidden"></div>
 
     <div id="tower-panel" class="hidden"></div>
+
+    <!-- Bảng nâng cấp Toà Thành (Pháo Thành / Tường Thành) — hiện khi bấm vào thành. -->
+    <div id="castle-panel" class="hidden"></div>
 
     <!-- Bảng so sánh nhanh 2 nhánh Lv.4 (A/B) — chỉ hiện đúng lúc tháp tới mốc chọn
          nhánh, vì thanh nổi #tower-panel lúc đó chỉ có 2 nút bé tí không đủ chỗ mô tả. -->
@@ -277,20 +331,27 @@
 <script src="js/assets.js"></script>
 <script src="js/util/spritefx.js"></script>
 <script src="js/systems/devmode.js"></script>
+<script src="js/systems/debug.js"></script>
 <script src="js/systems/damage.js"></script>
 <script src="js/systems/economy.js"></script>
 <script src="js/systems/wave.js"></script>
 <script src="js/systems/skills.js"></script>
+<script src="js/systems/ambient.js"></script>
 <script src="js/systems/save.js"></script>
 <script src="js/systems/tutorial.js"></script>
+<script src="js/systems/difficulty.js"></script>
+<script src="js/systems/endless.js"></script>
+<script src="js/systems/meta.js"></script>
 <script src="js/entities/projectile.js"></script>
 <script src="js/entities/enemy.js"></script>
 <script src="js/entities/soldier.js"></script>
 <script src="js/entities/tower.js"></script>
 <script src="js/entities/hero.js"></script>
+<script src="js/entities/castle.js"></script>
 <script src="js/map.js"></script>
 <script src="js/ui/damageText.js"></script>
 <script src="js/ui/menu.js"></script>
+<script src="js/ui/research.js"></script>
 <script src="js/ui/heroselect.js"></script>
 <script src="js/ui/hud.js"></script>
 <script src="js/ui/guide.js"></script>
