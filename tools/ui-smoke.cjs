@@ -93,6 +93,25 @@ const { pathToFileURL } = require('node:url');
     await page.evaluate(() => __td.game.hero.moveTo(100, 450));
     await page.locator('.build-btn').first().click();
     assert.equal(await page.evaluate(() => __td.game.armedTowerType), 'archer', 'Can build while hero moves');
+    await page.waitForFunction(() => document.getElementById('app').classList.contains('placing-tower'));
+    assert.equal(await page.locator('#wave-preview').isVisible(), false);
+    assert.equal(await page.locator('#branch-info-panel').isVisible(), false);
+    const placement = await page.evaluate(() => {
+      const g = __td.game;
+      g.economy.gold = 1000;
+      // Build in the region previously covered by the wave card.
+      for (let y = 65; y < 120; y += 5) for (let x = 760; x < 930; x += 5) {
+        if (!g.map.isBuildable(x, y, g.towers)) continue;
+        const r = document.getElementById('gameCanvas').getBoundingClientRect();
+        const px = r.left + x * r.width / 960, py = r.top + y * r.height / 600;
+        if (document.elementFromPoint(px, py)?.id === 'gameCanvas') return { px, py, count: g.towers.length };
+      }
+      return null;
+    });
+    assert.ok(placement, 'Previously covered region is available for placement');
+    await page.mouse.click(placement.px, placement.py);
+    await page.waitForFunction(count => __td.game.towers.length === count + 1, placement.count);
+    assert.equal(await page.evaluate(() => __td.game.armedTowerType), null);
     await page.keyboard.press('Escape');
     await page.evaluate(() => { __td.game.hero.moveTarget = null; });
     const hero = await page.evaluate(() => ({ x: __td.game.hero.x, y: __td.game.hero.y }));

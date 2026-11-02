@@ -43,19 +43,19 @@ const TacticalPanels = (() => {
     if (wm !== lastManager || wm.waveIndex !== lastWave) {
       lastManager = wm; lastWave = wm.waveIndex;
       const info = TacticalInfo.summarizeWave(wm.previewNextWave());
-      els.waveTitle.textContent = info ? `Đợt ${info.number} · ${info.total} quái sắp ra` : 'Đợt cuối · không còn tiếp viện';
+      els.waveTitle.textContent = info ? `Đợt ${info.number} · ${info.total} quái` : 'Đợt cuối · không còn tiếp viện';
       els.waveBody.innerHTML = info ? info.routes.map(route => `<div class="wave-route"><h3>Đường ${route.path + 1}</h3><ul>${route.enemies.map(enemy => `<li class="${enemy.boss ? 'wave-boss' : ''}"><span>${enemy.name}${enemy.boss ? ' · BOSS' : ''}</span><strong>×${enemy.count}</strong></li>`).join('')}</ul>${route.tunnel ? '<p class="wave-warning">Có quái dùng hầm dịch chuyển</p>' : ''}</div>`).join('') + (info.routes.some(route => route.enemies.some(enemy => enemy.type === 'splitter')) ? '<p class="wave-warning">Phân thân có thể sinh thêm quái con; chưa tính vào tổng.</p>' : '') : '<p>Dọn sạch quái còn lại để giữ vững thành trì.</p>';
     }
     const ready = !wm.active && !wm.finishedAllSpawns && game.enemies.length === 0;
     els.callWave.classList.toggle('hidden', wm.finishedAllSpawns);
     els.callWave.disabled = !ready || game.paused || game.over;
-    els.callWave.textContent = `Gọi đợt ${wm.waveIndex + 2}`;
+    els.callWave.textContent = 'Gọi đợt';
     els.waveStatus.textContent = wm.finishedAllSpawns ? 'Không còn đợt mới.' : game.paused ? 'Tiếp tục trận để gọi đợt.' : wm.autoAdvance ? 'Tự động gọi đợt đang bật.' : ready ? 'Sẵn sàng khi bạn muốn.' : 'Chờ dọn xong đợt hiện tại để gọi tiếp.';
   }
   function renderTowerIntel(game, els) {
     const tower = game.selectedTower || (!game.armedTowerType ? game.hoveredTower : null);
     const type = game.armedTowerType || tower?.type;
-    if (!type || game.selectedCastle) {
+    if (!type || game.selectedCastle || game.armedTowerType) {
       els.branchInfoPanel.classList.add('hidden'); lastIntel = null; return;
     }
     const cfg = CONFIG.towers[type];

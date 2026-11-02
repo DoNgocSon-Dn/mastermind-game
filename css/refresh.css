@@ -256,3 +256,16 @@ input[type='range'], input[type='checkbox'] { accent-color: #ebc779; }
 .intel-heading strong { font-size: 11px; }
 .intel-heading span { font-size: 9px; }
 .intel-toggle { display: block; margin: 5px 0 0 14px; font-size: 9px; color: #bdcdbb; }
+
+/* One compact row; optional enemy details drop down only on request. */
+#wave-preview { top: 34px; right: 8px; width: auto; max-width: 240px; padding: 3px 5px; display: flex; align-items: center; gap: 7px; }
+#wave-preview summary { white-space: nowrap; font-size: 9px; padding: 3px 0; }
+#btn-call-wave { width: auto; margin: 0; padding: 4px 7px; font-size: 9px; white-space: nowrap; }
+#wave-preview-details[open] { width: 155px; }
+#wave-preview-body { max-height: 115px; }
+#wave-preview-status { display: none; }
+#wave-preview:has(details[open]) { align-items: flex-start; }
+.placing-tower #branch-info-panel, .placing-tower #wave-preview,
+.placing-tower #tower-hover-bar { display: none !important; }
+.placing-tower .build-btn[data-tooltip]::after,
+.placing-tower .build-btn[data-tooltip]::before { display: none !important; }

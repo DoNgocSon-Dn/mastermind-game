@@ -145,6 +145,7 @@ const HUD = (() => {
   }
 
   function setArmedTower(type) {
+    document.getElementById("app").classList.toggle("placing-tower", !!type);
     document.querySelectorAll('.build-btn').forEach(b => b.classList.toggle('armed', b.dataset.type === type));
     if (type) {
       els.armedBanner.textContent = 'Bấm bản đồ để xây · Esc huỷ';
@@ -206,7 +207,7 @@ const HUD = (() => {
     const badge = (game.difficulty && game.difficulty.id !== 'normal') ? game.difficulty.badge + ' ' : '';
     let main = '';
     if (game.paused) main = 'Tạm dừng';
-    else if (!wm.active && alive === 0 && !wm.finishedAllSpawns) main = '▸ Gọi đợt tiếp theo';
+
     els.status.textContent = badge + main;
     els.status.classList.toggle('hidden', !(badge || main));
     // Số quái: chỉ khi đang có quái trên bản đồ.
