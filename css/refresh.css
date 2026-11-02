@@ -269,3 +269,8 @@ input[type='range'], input[type='checkbox'] { accent-color: #ebc779; }
 .placing-tower #tower-hover-bar { display: none !important; }
 .placing-tower .build-btn[data-tooltip]::after,
 .placing-tower .build-btn[data-tooltip]::before { display: none !important; }
+
+/* Selecting a tower frees the entire build palette footprint for placement. */
+.placing-tower #build-menu { visibility: hidden; pointer-events: none; }
+
+.cancel-placement { pointer-events: auto; margin-left: 6px; padding: 3px 7px; border: 1px solid #ebc779; border-radius: 5px; background: #203027; color: #ebc779; font: inherit; cursor: pointer; }

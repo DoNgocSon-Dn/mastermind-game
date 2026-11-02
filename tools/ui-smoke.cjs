@@ -65,6 +65,7 @@ const { pathToFileURL } = require('node:url');
     assert.equal(await page.locator('.intel-branch-grid section').count(), 2);
     await page.click('#tp-upgrade');
     await page.waitForFunction(() => __td.game.selectedTower.level === 2);
+    await page.waitForFunction(() => document.querySelector('.intel-upgrade')?.textContent.includes('Cấp 3'));
     assert.ok((await page.locator('.intel-upgrade').textContent()).includes('Cấp 3'));
     await page.click('#tp-upgrade');
     await page.waitForFunction(() => __td.game.selectedTower.level === 3);
@@ -73,6 +74,7 @@ const { pathToFileURL } = require('node:url');
     await page.waitForFunction(() => __td.game.selectedTower.branch === 'A');
     assert.equal(await page.evaluate(() => __td.game.selectedTower.targetPriority), 'strongest');
     assert.ok((await page.locator('#branch-info-panel').textContent()).includes('Đánh được quái bay'));
+    await page.waitForFunction(() => !document.querySelector('.intel-branches'));
     assert.equal(await page.locator('.intel-branches').count(), 0);
     await page.evaluate(() => { __td.game.selectedTower = null; __td.game.towers = []; __td.frame(); });
     await page.click('#btn-call-wave');
@@ -96,11 +98,12 @@ const { pathToFileURL } = require('node:url');
     await page.waitForFunction(() => document.getElementById('app').classList.contains('placing-tower'));
     assert.equal(await page.locator('#wave-preview').isVisible(), false);
     assert.equal(await page.locator('#branch-info-panel').isVisible(), false);
+    assert.equal(await page.locator('#build-menu').isVisible(), false);
     const placement = await page.evaluate(() => {
       const g = __td.game;
       g.economy.gold = 1000;
-      // Build in the region previously covered by the wave card.
-      for (let y = 65; y < 120; y += 5) for (let x = 760; x < 930; x += 5) {
+      // Build directly underneath the tower palette, not elsewhere on the map.
+      for (let y = 60; y < 95; y += 5) for (let x = 30; x < 230; x += 5) {
         if (!g.map.isBuildable(x, y, g.towers)) continue;
         const r = document.getElementById('gameCanvas').getBoundingClientRect();
         const px = r.left + x * r.width / 960, py = r.top + y * r.height / 600;
@@ -108,11 +111,15 @@ const { pathToFileURL } = require('node:url');
       }
       return null;
     });
-    assert.ok(placement, 'Previously covered region is available for placement');
+    assert.ok(placement, 'Tower palette footprint is available for placement');
     await page.mouse.click(placement.px, placement.py);
     await page.waitForFunction(count => __td.game.towers.length === count + 1, placement.count);
     assert.equal(await page.evaluate(() => __td.game.armedTowerType), null);
-    await page.keyboard.press('Escape');
+    assert.equal(await page.locator('#build-menu').isVisible(), true);
+    await page.locator('.build-btn').first().click();
+    assert.equal(await page.locator('#build-menu').isVisible(), false);
+    await page.locator('.cancel-placement').click();
+    assert.equal(await page.locator('#build-menu').isVisible(), true);
     await page.evaluate(() => { __td.game.hero.moveTarget = null; });
     const hero = await page.evaluate(() => ({ x: __td.game.hero.x, y: __td.game.hero.y }));
     const canvas = await page.locator('#gameCanvas').boundingBox();

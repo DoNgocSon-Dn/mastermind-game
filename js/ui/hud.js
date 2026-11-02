@@ -148,7 +148,8 @@ const HUD = (() => {
     document.getElementById("app").classList.toggle("placing-tower", !!type);
     document.querySelectorAll('.build-btn').forEach(b => b.classList.toggle('armed', b.dataset.type === type));
     if (type) {
-      els.armedBanner.textContent = 'Bấm bản đồ để xây · Esc huỷ';
+      els.armedBanner.innerHTML = 'Bấm bản đồ để xây <button type="button" class="cancel-placement">Hủy ×</button>';
+      els.armedBanner.querySelector('button').onclick = () => cb.onArmTower(type);
       els.armedBanner.classList.remove('hidden');
     } else {
       els.armedBanner.classList.add('hidden');
