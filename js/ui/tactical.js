@@ -69,7 +69,9 @@ const TacticalPanels = (() => {
     const flying = TacticalInfo.canHitFlying(type, stats);
     const blind = stats.minRange ?? cfg.minRange ?? 0;
     const rows = TacticalInfo.statRows(type, stats, modifiers);
-    let html = `<div class="intel-heading"><strong>${tower ? tower.displayName : cfg.label}</strong><span>${tower ? tower.buildTimer > 0 ? 'Đang xây · ' + Math.ceil(tower.buildTimer) + 's' : 'Đang xem' : 'Chuẩn bị xây · ' + stats.cost + ' vàng'}</span></div>`;
+    const expanded = els.branchInfoPanel.querySelector(".intel-details")?.open && els.branchInfoPanel.dataset.intelType === type;
+    els.branchInfoPanel.dataset.intelType = type;
+    let html = `<details class="intel-details" ${expanded ? "open" : ""}><summary><div class="intel-heading"><strong>${tower ? tower.displayName : cfg.label}</strong><span>${tower ? tower.buildTimer > 0 ? 'Đang xây · ' + Math.ceil(tower.buildTimer) + 's' : 'Đang xem' : 'Chuẩn bị xây · ' + stats.cost + ' vàng'}</span></div><span class="intel-toggle">Chỉ số & nâng cấp</span></summary>`;
     if (tower && game.selectedTower === tower && type !== 'barracks') {
       const priorities = [
         ['first', 'Gần thành', 'Quái còn ít đường nhất để vào thành.'],
@@ -96,6 +98,7 @@ const TacticalPanels = (() => {
       }
       html += '</div></details>';
     }
+    html += '</details>';
     const focusPriority = document.activeElement?.dataset.targetPriority;
     els.branchInfoPanel.innerHTML = html;
     if (focusPriority) els.branchInfoPanel.querySelector(`[data-target-priority="${focusPriority}"]`)?.focus({ preventScroll: true });

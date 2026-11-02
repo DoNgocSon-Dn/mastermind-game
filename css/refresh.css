@@ -245,3 +245,14 @@ input[type='range'], input[type='checkbox'] { accent-color: #ebc779; }
 .intel-branch-grid .intel-stats { gap: 3px; }
 .intel-branch-grid .intel-stats div { display: flex; justify-content: space-between; align-items: center; gap: 4px; }
 .intel-branch-grid .intel-stats dd { margin: 0; font-size: 10px; }
+
+/* Keep optional intelligence folded so the battlefield stays visible. */
+#wave-preview { width: 200px; padding: 7px 9px; }
+#wave-preview summary { font-size: 10px; }
+#btn-call-wave { margin-top: 6px; padding: 6px 8px; font-size: 11px; }
+#branch-info-panel { width: 240px; max-height: 250px; padding: 8px 10px; }
+.intel-details > summary { cursor: pointer; color: #ebc779; font-size: 10px; }
+.intel-details > summary .intel-heading { display: inline-flex; width: calc(100% - 15px); vertical-align: top; gap: 6px; }
+.intel-heading strong { font-size: 11px; }
+.intel-heading span { font-size: 9px; }
+.intel-toggle { display: block; margin: 5px 0 0 14px; font-size: 9px; color: #bdcdbb; }
