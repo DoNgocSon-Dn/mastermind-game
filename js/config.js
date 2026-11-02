@@ -328,6 +328,24 @@ const CONFIG = {
   // chơi lại vẫn hiện lại) trừ khi người chơi tick "Không hiện lại" (xem
   // ui/guide.js + systems/tutorial.js). Chỉ gắn ở map thật sự đổi luật chơi.
   mechanicIntros: {
+    7: {
+      icon: '🔥', title: 'Khe Núi Lửa',
+      lines: ['Vùng khe nhiệt phun lửa theo chu kỳ 14 giây: nghỉ 9 giây, báo trước 2 giây, phun 3 giây.',
+        'Quái mặt đất trong vòng nhận 8 sát thương chuẩn mỗi 0,5 giây. Quái bay và quái dưới hầm không bị ảnh hưởng.',
+        'Lửa không hại quân mình. Chặn quái tại khe nhiệt để tận dụng sát thương. Chu kỳ bắt đầu khi gọi đợt đầu.'],
+    },
+    9: {
+      icon: '🌿', title: 'Bùn Lầy Và Đường Hầm',
+      lines: ['Vùng bùn có viền nâu làm quái mặt đất di chuyển chậm 25%; ra khỏi vùng sẽ trở lại bình thường.',
+        'Quái bay và quân mình không bị bùn làm chậm. Tốc độ đánh không đổi.',
+        'Màn này vẫn có đường hầm: chú ý cả cửa ra, đừng dồn toàn bộ phòng thủ vào bãi bùn.'],
+    },
+    12: {
+      icon: '❄️', title: 'Gió Lạnh',
+      lines: ['Các vùng viền xanh có gió lạnh theo chu kỳ 14 giây: nghỉ 9 giây, báo trước 2 giây, hoạt động 3 giây.',
+        'Gió lạnh giảm 28% tốc độ di chuyển của cả quái (kể cả quái bay), Hero và lính trong vùng. Không giảm tốc độ đánh.',
+        'Ra khỏi vùng là hết chậm. Áp dụng cho cả 4 màn mùa đông; có thể di chuyển Hero tránh vùng trước khi gió tới.'],
+    },
     1: {
       icon: '🌀',
       title: 'Quái Phân Thân',

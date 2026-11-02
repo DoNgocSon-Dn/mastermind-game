@@ -291,7 +291,7 @@ class Enemy {
     if (!target) { this.reachedEnd = true; return; }
     const dx = target.x - this.x, dy = target.y - this.y;
     const dist = Math.hypot(dx, dy);
-    const step = this.speed * dt;
+    const step = this.speed * (game.environment?.speedMultiplier(this, 'enemy') ?? 1) * dt;
     if (dist < Math.max(step, 4)) {
       this.traveled += dist;
       this.wpIndex++;

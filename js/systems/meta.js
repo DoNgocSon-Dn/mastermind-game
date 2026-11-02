@@ -92,6 +92,11 @@ const Meta = (() => {
   function globalCdMult() { return 1 - value('globalCd'); }
 
   return {
+    snapshot: () => ({ ...levels }),
+    restore: (data) => {
+      for (const key in UPGRADES) levels[key] = data[key] || 0;
+      _save();
+    },
     UPGRADES, totalStars, available, level, maxLevel, nextCost, canBuy, buy, value,
     towerDamageMult, startGoldBonus, startLivesBonus, buildTimeMult, globalCdMult,
   };

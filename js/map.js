@@ -652,6 +652,7 @@ const CTX_FILTER_OK = (() => {
 // Bộ lọc riêng cho MẶT ĐẤT (tách khỏi bộ lọc trang trí): với núi lửa cần nền tối hơn
 // hẳn so với cây/đá thì mới ra chất đất cháy, còn các theme khác dùng chung 1 bộ như cũ.
 const THEME_GROUND_FILTERS = {
+  winter: 'saturate(0.08) brightness(1.42) contrast(0.78)',
   // sepia gần tối đa để KHỬ HẲN sắc xanh lá của tile cỏ gốc — để 0.72 thì nền vẫn ám
   // xanh ô-liu, nhìn ra "cỏ bị nhuộm tối" chứ chưa ra "đất cháy".
   volcano: 'sepia(0.95) saturate(0.72) brightness(0.42) hue-rotate(-10deg) contrast(1.16)',
@@ -674,6 +675,15 @@ class GameMap {
   constructor(def) {
     Object.assign(this, def);
     this.pathWidth = 46;
+  }
+
+  createSession() {
+    // Keep campaign/custom templates pristine when clearing resources in a run.
+    return new GameMap({
+      ...this,
+      decorations: this.decorations.map(item => ({ ...item })),
+      obstacles: (this.obstacles || []).map(item => ({ ...item })),
+    });
   }
 
   // paths[0] — giữ tương thích cho code cũ chỉ biết tới 1 đường (Hero spawn, v.v.)
@@ -787,7 +797,7 @@ class GameMap {
     // = đất cháy) bằng 1 lớp phủ mờ, để map không lòi ra bãi cỏ xanh chói lạc quẻ.
     if (!CTX_FILTER_OK && THEME_GROUND_FILTERS[this.theme]) {
       ctx.save();
-      ctx.fillStyle = this.theme === 'volcano' ? 'rgba(34, 20, 14, 0.62)' : 'rgba(20, 20, 30, 0.28)';
+      ctx.fillStyle = this.theme === 'volcano' ? 'rgba(34, 20, 14, 0.62)' : 'rgba(218, 235, 239, 0.72)';
       ctx.fillRect(0, 0, CONFIG.canvas.width, CONFIG.canvas.height);
       ctx.restore();
     }
@@ -1061,6 +1071,7 @@ class GameMap {
     octx.imageSmoothingEnabled = false;
 
     this._drawGrassRectInto(octx);
+    this._drawMeadowInto(octx);
 
     // Chủ đề núi lửa: phủ vệt tro rồi vẽ khe nứt dung nham TRƯỚC khi vẽ đường đi, để
     // dù khe nứt có sinh gần đường thì mặt đường vẫn nằm đè lên trên, giữ đường đi rõ ràng.
@@ -1283,6 +1294,13 @@ class GameMap {
     if (animTime != null && d.animated) sx = (Math.floor(animTime / (1000 / d.fps) + d.phase) % d.frames) * d.sw;
     ctx.save();
     ctx.translate(d.x, d.y);
+    // Contact shadows follow the resource, so clearing it also removes its shadow.
+    if (d.dw >= 28 && !d.img.startsWith('deco')) {
+      ctx.fillStyle = 'rgba(18,32,27,0.18)';
+      ctx.beginPath();
+      ctx.ellipse(4, -2, d.dw * 0.29, Math.max(3, d.dw * 0.09), -0.15, 0, Math.PI * 2);
+      ctx.fill();
+    }
     if (d.flip) ctx.scale(-1, 1);
     ctx.drawImage(img, sx, d.sy, d.sw, d.sh, -d.dw / 2, -d.dh, d.dw, d.dh);
     ctx.restore();
@@ -1295,6 +1313,58 @@ class GameMap {
     if (!this._terrainLayer) this._buildTerrainLayer();
     ctx.drawImage(this._terrainLayer, 0, 0);
     if (this.volcanic) this._drawEmbersInto(ctx, performance.now());
+  }
+
+  // Seeded, purely visual ground cover. Baked once; never changes build/collision rules.
+  _drawMeadowInto(ctx) {
+    const rng = mulberry32(9137 + (this.id || 0) * 71);
+    const palette = {
+      spring: ['#527e41', '#b6cf79', '#ffe1e6', '#efacc3'],
+      summer: ['#93944c', '#ddd28a', '#fff0b4', '#c4a65e'],
+      autumn: ['#755c37', '#bd924c', '#d27636', '#e0b15b'],
+      winter: ['#adc6c9', '#e4eff0', '#f5faf7', '#c8dce5'],
+      volcano: ['#362f29', '#685143', '#93705a', '#513e34'],
+    }[this.theme] || ['#527e41', '#b6cf79', '#ffe1e6', '#efacc3'];
+    ctx.save();
+    // Irregular islands of grass, litter or snow break up the repeated ground tile.
+    for (let i = 0; i < 24; i++) {
+      const x = rng() * 960, y = rng() * 600, radius = 55 + rng() * 95;
+      const wash = ctx.createRadialGradient(x, y, 0, x, y, radius);
+      wash.addColorStop(0, palette[i % 2]);
+      wash.addColorStop(1, palette[i % 2] + '00');
+      ctx.globalAlpha = this.theme === 'winter' ? 0.4 : 0.22;
+      ctx.fillStyle = wash; ctx.fillRect(x - radius, y - radius, radius * 2, radius * 2);
+    }
+    for (let i = 0; i < 42; i++) {
+      const x = rng() * 960, y = rng() * 600;
+      if (_nearAnyPath(this.paths, x, y, 48)) continue;
+      const rx = 22 + rng() * 55, ry = 12 + rng() * 26;
+      for (let k = 0; k < 180; k++) {
+        const dx = (rng() * 2 - 1) * rx, dy = (rng() * 2 - 1) * ry;
+        const radius = dx * dx / (rx * rx) + dy * dy / (ry * ry);
+        if (radius > 1 || rng() < radius * 0.7) continue;
+        const px = Math.round((x + dx) / 2) * 2, py = Math.round((y + dy) / 2) * 2;
+        ctx.globalAlpha = 0.12 + (1 - radius) * 0.17;
+        ctx.fillStyle = palette[k % 2];
+        ctx.fillRect(px, py, 4 + Math.floor(rng() * 4) * 2, 2 + Math.floor(rng() * 3) * 2);
+        if (k % 11 === 0) {
+          ctx.globalAlpha = 0.65;
+          ctx.fillStyle = palette[2 + (k % 2)];
+          ctx.fillRect(px, py - 2, 3, 2);
+          if (this.theme === 'spring') {
+            ctx.fillStyle = '#f7eab6'; ctx.fillRect(px + 1, py - 3, 1, 1);
+            ctx.fillStyle = '#4f743c'; ctx.fillRect(px + 1, py, 1, 3);
+          }
+        }
+      }
+    }
+    // Gentle edge shade anchors the forest while leaving the central battlefield clear.
+    ctx.globalAlpha = 1;
+    const shade = ctx.createRadialGradient(480, 300, 220, 480, 300, 570);
+    shade.addColorStop(0, 'rgba(16,30,25,0)');
+    shade.addColorStop(1, 'rgba(16,30,25,0.18)');
+    ctx.fillStyle = shade; ctx.fillRect(0, 0, 960, 600);
+    ctx.restore();
   }
 
   _strokeAllPaths(ctx) {

@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Thủ Thành — Tower Defense Pixel</title>
 <link rel="stylesheet" href="css/style.css?v=16">
+<link rel="stylesheet" href="css/refresh.css?v=4">
 </head>
 <body>
 <!--
@@ -20,6 +21,17 @@
 
   <!-- Main Menu -->
   <div id="screen-menu" class="screen hidden">
+    <div class="menu-scene" aria-hidden="true">
+      <div class="scene-orbit"></div>
+      <div class="scene-island"></div>
+      <img class="scene-castle" src="assets/buildings/blue_castle.png" alt="">
+      <div class="scene-tree scene-tree-one"></div>
+      <div class="scene-tree scene-tree-two"></div>
+      <div class="scene-tree scene-tree-three"></div>
+      <img class="scene-rock" src="assets/decorations/rock1.png" alt="">
+      <div class="scene-guard"></div>
+      <div class="scene-caption">VƯƠNG QUỐC ĐANG CHỜ BẠN</div>
+    </div>
     <div class="cloud-layer">
       <div class="cloud cloud-1"></div>
       <div class="cloud cloud-2"></div>
@@ -66,9 +78,10 @@
     </div>
 
     <div class="menu-titleblock">
-      <div class="title-crown">⚔</div>
+      <div class="title-crown"><img src="assets/ui/icon_sword.png" alt=""> BẢO VỆ VƯƠNG QUỐC</div>
       <h1>THỦ THÀNH</h1>
       <div class="subtitle">Pixel Tower Defense · 16 màn · 4 mùa</div>
+      <p class="menu-intro">Dựng tháp. Chọn tướng.<br>Viết nên chiến thắng của bạn.</p>
     </div>
 
     <div class="menu-buttons">
@@ -77,7 +90,7 @@
       <button class="menu-btn secondary hidden" id="btn-mapeditor-menu">🛠️&ensp;Tự Làm Map</button>
       <button class="menu-btn secondary" id="btn-settings"><span class="icon-inline gear"></span>&ensp;Cài đặt</button>
     </div>
-    <div class="menu-version">v1.0 · pixel-art</div>
+    <div class="menu-version">CHIẾN THUẬT CỦA BẠN. VƯƠNG QUỐC CỦA BẠN.</div>
     <div id="settings-panel" class="hidden">
       <label><input type="checkbox" id="chk-mute"> Tắt âm thanh</label>
       <label><span class="icon-inline music"></span> Âm lượng <input type="range" id="rng-volume" min="0" max="1" step="0.05" value="0.6"></label>
@@ -88,6 +101,13 @@
       <div id="dev-mode-row" class="hidden">
         <label><input type="checkbox" id="chk-devmode"> 🔓 Dev Mode (vàng vô hạn + mở hết map)</label>
       </div>
+      <div class="backup-controls">
+        <button class="menu-btn secondary btn-compact" id="btn-export-save">Sao lưu tiến độ</button>
+        <button class="menu-btn secondary btn-compact" id="btn-import-save">Khôi phục từ tệp</button>
+        <input type="file" id="file-import-save" accept=".json,application/json" class="hidden">
+      </div>
+      <p class="backup-hint">Tệp khôi phục sẽ thay thế tiến độ và nghiên cứu hiện tại.</p>
+      <p id="backup-status" role="status" aria-live="polite"></p>
       <button class="menu-btn secondary btn-compact" id="btn-settings-close">Đóng</button>
     </div>
   </div>
@@ -114,6 +134,7 @@
     <button class="menu-btn secondary btn-compact" id="back-to-menu">← Menu</button>
     <button class="menu-btn secondary btn-compact hidden" id="btn-mapeditor-select">🛠️ Tự Làm Map</button>
     <h2>Chọn Màn Chơi</h2>
+    <p class="screen-description">Bốn mùa, một hành trình. Chinh phục từng vùng đất để tiến xa hơn.</p>
     <div id="level-list"></div>
   </div>
 
@@ -198,6 +219,7 @@
     </div>
     <button class="menu-btn secondary btn-compact" id="back-to-levelselect">← Chọn Màn</button>
     <h2>Chọn Tướng</h2>
+    <p class="screen-description">Mỗi vị tướng, một lối chơi. Ai sẽ dẫn đầu trận chiến?</p>
     <div id="difficulty-select">
       <span class="diff-label">Độ khó</span>
       <div class="diff-buttons" id="diff-buttons"></div>
@@ -258,6 +280,12 @@
     </div>
 
     <div id="build-menu"></div>
+    <details id="wave-preview" class="ui-frame" open>
+      <summary><span id="wave-preview-title">Đợt tiếp theo</span></summary>
+      <div id="wave-preview-body"></div>
+      <p id="wave-preview-status"></p>
+      <button id="btn-call-wave" type="button">Gọi đợt này</button>
+    </details>
 
     <div id="skills-panel"></div>
 
@@ -313,6 +341,7 @@
 </div><!-- /#app -->
 
 </div><!-- /#stage -->
+<div id="orientation-hint">Xoay ngang điện thoại để bản đồ và nút chơi lớn hơn.</div>
 
 <!-- Loading: NẰM NGOÀI #stage/#app cố tình — #app là hộp logic 960x600 bị zoom
      rồi #stage canh giữa (letterbox khi tỉ lệ cửa sổ lệch 16:10), nên đặt loading
@@ -337,6 +366,7 @@
 <script src="js/systems/wave.js"></script>
 <script src="js/systems/skills.js"></script>
 <script src="js/systems/ambient.js"></script>
+<script src="js/systems/environment.js"></script>
 <script src="js/systems/save.js"></script>
 <script src="js/systems/tutorial.js"></script>
 <script src="js/systems/difficulty.js"></script>
@@ -353,6 +383,7 @@
 <script src="js/ui/menu.js"></script>
 <script src="js/ui/research.js"></script>
 <script src="js/ui/heroselect.js"></script>
+<script src="js/ui/tactical.js"></script>
 <script src="js/ui/hud.js"></script>
 <script src="js/ui/guide.js"></script>
 <script src="js/ui/mapeditor.js"></script>

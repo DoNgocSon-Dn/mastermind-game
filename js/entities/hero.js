@@ -65,6 +65,7 @@ class Hero {
   // aimPoint (tuỳ chọn) = vị trí con trỏ chuột lúc bấm skill — dùng để LÍNH GIÁO
   // chọn hướng lao thẳng theo ý mình, thay vì bị ép lao theo mục tiêu đang đánh.
   useSkill(key, game, aimPoint) {
+    if (game.paused || game.over) return;
     if (!this.alive || key !== this.skillId) return;
     const scfg = this.cfg.skill;
     if (this.skillCooldowns[this.skillId] > 0) return;
@@ -221,7 +222,7 @@ class Hero {
       if (dist < 4) { this.moveTarget = null; }
       else {
         this.facingLeft = dx < 0;
-        const step = this.speed * dt;
+        const step = this.speed * (game.environment?.speedMultiplier(this, 'ally') ?? 1) * dt;
         this.x += (dx / dist) * Math.min(step, dist);
         this.y += (dy / dist) * Math.min(step, dist);
       }
@@ -262,7 +263,7 @@ class Hero {
           const dx = seek.x - this.x, dy = seek.y - this.y;
           const dist = Math.hypot(dx, dy) || 1;
           this.facingLeft = dx < 0;
-          const step = this.speed * dt;
+          const step = this.speed * (game.environment?.speedMultiplier(this, 'ally') ?? 1) * dt;
           this.x += (dx / dist) * Math.min(step, dist);
           this.y += (dy / dist) * Math.min(step, dist);
           this._animate(dt, true);
@@ -281,7 +282,7 @@ class Hero {
         const hdist = Math.hypot(hdx, hdy);
         if (hdist > 6 && this.rootTimer <= 0) {
           this.facingLeft = hdx < 0;
-          const step = this.speed * dt;
+          const step = this.speed * (game.environment?.speedMultiplier(this, 'ally') ?? 1) * dt;
           this.x += (hdx / hdist) * Math.min(step, hdist);
           this.y += (hdy / hdist) * Math.min(step, hdist);
           this._animate(dt, true);

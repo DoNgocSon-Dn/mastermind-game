@@ -22,6 +22,10 @@ const HUD = (() => {
     els.towerPanel = document.getElementById('tower-panel');
     els.castlePanel = document.getElementById('castle-panel');
     els.branchInfoPanel = document.getElementById('branch-info-panel');
+    els.branchInfoPanel.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-target-priority]');
+      if (button && !button.disabled) cb.onTargetPriority(button.dataset.targetPriority);
+    });
     els.skillsPanel = document.getElementById('skills-panel');
     els.armedBanner = document.getElementById('armed-banner');
     els.hoverBar = document.getElementById('tower-hover-bar');
@@ -33,6 +37,12 @@ const HUD = (() => {
     els.btnSpawnMode.onclick = () => cb.onToggleSpawnMode();
     els.btnExit.onclick = () => cb.onExit();
 
+    els.wavePreview = document.getElementById('wave-preview');
+    els.waveTitle = document.getElementById('wave-preview-title');
+    els.waveBody = document.getElementById('wave-preview-body');
+    els.waveStatus = document.getElementById('wave-preview-status');
+    els.callWave = document.getElementById('btn-call-wave');
+    els.callWave.onclick = () => cb.onNextWave();
     _buildSpeedButtons();
     _buildBuildMenu();
     _buildGlobalSkillButtons();
@@ -165,7 +175,7 @@ const HUD = (() => {
   }
 
   function update(game) {
-    if (game.hero && game.hero.alive && game.hero.moveTarget !== null) {
+    if (game.hero && game.hero.alive && game.hero.moveTarget !== null && !game.armedTowerType && !game.globalSkills.pendingActivation && !game.hero.selected) {
       els.armedBanner.textContent = '🚶 Tướng đang di chuyển…';
       els.armedBanner.classList.remove('hidden');
     } else if (!game.armedTowerType && !game.globalSkills.pendingActivation && !game.hero.selected) {
@@ -191,11 +201,12 @@ const HUD = (() => {
     // SỰ đáng chú ý: lời nhắc "gọi đợt sau" + số quái còn lại lúc đang đánh. Các trạng
     // thái hiển nhiên ("Đang giao tranh", "Chuẩn bị") không hiện chữ.
     const wm = game.waveManager;
+    TacticalPanels.renderWavePreview(game, els);
     const alive = game.enemies.length;
     const badge = (game.difficulty && game.difficulty.id !== 'normal') ? game.difficulty.badge + ' ' : '';
     let main = '';
     if (game.paused) main = 'Tạm dừng';
-    else if (wm.waitingForConfirm && alive === 0 && !wm.finishedAllSpawns) main = '▸ Gọi đợt tiếp theo';
+    else if (!wm.active && alive === 0 && !wm.finishedAllSpawns) main = '▸ Gọi đợt tiếp theo';
     els.status.textContent = badge + main;
     els.status.classList.toggle('hidden', !(badge || main));
     // Số quái: chỉ khi đang có quái trên bản đồ.
@@ -253,10 +264,8 @@ const HUD = (() => {
 
     // Tháp đang CHỌN cũng hiện thanh chỉ số dưới đáy màn hình (không chỉ lúc hover) —
     // vì panel nổi giờ chỉ còn 2 nút hành động, không còn chỗ hiện chỉ số nữa.
-    renderHoverBar(game.hoveredTower || game.selectedTower);
-
-    if (game.selectedTower && game.selectedTower.canChooseBranch) renderBranchInfo(game.selectedTower);
-    else els.branchInfoPanel.classList.add('hidden');
+    els.hoverBar.classList.add('hidden');
+    TacticalPanels.renderTowerIntel(game, els);
   }
 
   // Bảng nâng cấp Toà Thành — 2 hàng (Pháo Thành / Tường Thành). Chỉ dựng lại khi
@@ -287,76 +296,6 @@ const HUD = (() => {
 
     const cbn = document.getElementById('cp-cannon'); if (cbn) cbn.onclick = () => cb.onUpgradeCastle('cannon');
     const cbw = document.getElementById('cp-wall'); if (cbw) cbw.onclick = () => cb.onUpgradeCastle('wall');
-  }
-
-  // Bảng so sánh nhanh nhánh A/B — chỉ dựng lại khi đổi tháp (nội dung tĩnh theo
-  // cfg, không cần refresh mỗi frame như panel hành động vốn phụ thuộc số vàng).
-  let _lastBranchTowerId = null;
-  function renderBranchInfo(tower) {
-    els.branchInfoPanel.classList.remove('hidden');
-    if (tower.id === _lastBranchTowerId) return;
-    _lastBranchTowerId = tower.id;
-    const a = tower.cfg.branches.A, b = tower.cfg.branches.B;
-    els.branchInfoPanel.innerHTML = `
-      <div class="bip-title">⚠ Chọn 1 trong 2 — không đổi lại được</div>
-      <div class="bip-cols">
-        <div class="bip-col">
-          <div class="bip-name">${a.label}</div>
-          <div class="bip-cost">${a.cost}<span class="icon-inline coin"></span></div>
-          <div class="bip-desc">${a.desc}</div>
-        </div>
-        <div class="bip-col">
-          <div class="bip-name">${b.label}</div>
-          <div class="bip-cost">${b.cost}<span class="icon-inline coin"></span></div>
-          <div class="bip-desc">${b.desc}</div>
-        </div>
-      </div>`;
-  }
-
-  function _speedLabel(rate) {
-    if (rate <= 0.5) return 'Nhanh';
-    if (rate <= 1.0) return 'Vừa';
-    return 'Chậm';
-  }
-  function _rangeLabel(range) {
-    if (range <= 140) return 'Ngắn';
-    if (range <= 170) return 'Vừa';
-    return 'Xa';
-  }
-
-  let _lastHoverSig = null;
-  function renderHoverBar(tower) {
-    if (!tower) {
-      els.hoverBar.classList.add('hidden');
-      _lastHoverSig = null;
-      return;
-    }
-    const aliveForSig = tower.type === 'barracks' ? tower.soldiers.filter(sd => sd.state !== 'Dead').length : -1;
-    const sig = [tower.id, tower.level, tower.branch, aliveForSig].join('|');
-    if (sig === _lastHoverSig) { els.hoverBar.classList.remove('hidden'); return; }
-    _lastHoverSig = sig;
-    els.hoverBar.classList.remove('hidden');
-
-    const s = tower.stats;
-    let stats;
-    if (tower.type === 'barracks') {
-      const alive = tower.soldiers.filter(sd => sd.state !== 'Dead').length;
-      stats = [
-        { val: `${alive}/${tower.soldiers.length}`, label: 'Lính' },
-        { val: s.dmg, label: 'Sát thương', icon: true },
-        { val: s.hp, label: 'Máu lính' },
-        { val: _speedLabel(s.atkRate), label: 'Tốc độ đánh' },
-        { val: s.respawn + 's', label: 'Hồi lính' },
-      ];
-    } else {
-      stats = [
-        { val: Math.round(s.damage), label: 'Sát thương', icon: true },
-        { val: _speedLabel(s.rate), label: 'Tốc độ bắn' },
-        { val: _rangeLabel(s.range), label: 'Tầm bắn' },
-      ];
-    }
-    els.hoverBar.innerHTML = `<div class="thb-name"><span class="icon-inline"></span>${tower.displayName}</div>` +
-      stats.map(st => `<div class="thb-stat"><span class="thb-val">${st.icon ? '<span class="icon-inline"></span>' : ''}${st.val}</span><span class="thb-label">${st.label}</span></div>`).join('');
   }
 
   function _nextCostLabel(type) {
@@ -455,5 +394,5 @@ const HUD = (() => {
     els.btnResultNext.classList.add('hidden');
   }
 
-  return { init, update, setHero, setArmedTower, setPendingSkill, setHeroArmed, showPauseOverlay, showResult, showEndlessResult, hideResult };
+  return { isWavePreviewOpen: () => !!els.wavePreview?.open, init, update, setHero, setArmedTower, setPendingSkill, setHeroArmed, showPauseOverlay, showResult, showEndlessResult, hideResult };
 })();

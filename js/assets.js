@@ -328,12 +328,17 @@ const AssetLoader = (() => {
 })();
 
 // Cài đặt âm lượng đơn giản, có thể bật/tắt trong màn Cài đặt.
-const SoundSettings = {
-  muted: false,
-  sfxVolume: 0.6,
-  musicMuted: false,
-  musicVolume: 0.35,
-};
+const SoundSettings = (() => {
+  const key = 'td_sound_v1';
+  const settings = { muted: false, sfxVolume: 0.6, musicMuted: false, musicVolume: 0.35 };
+  try {
+    const saved = JSON.parse(localStorage.getItem(key) || '{}');
+    for (const field of ['muted', 'musicMuted']) if (typeof saved?.[field] === 'boolean') settings[field] = saved[field];
+    for (const field of ['sfxVolume', 'musicVolume']) if (Number.isFinite(saved?.[field])) settings[field] = Math.max(0, Math.min(1, saved[field]));
+  } catch (_) { /* Defaults also work when storage is unavailable. */ }
+  settings.save = () => { try { localStorage.setItem(key, JSON.stringify(settings)); } catch (_) {} };
+  return settings;
+})();
 
 // Nhạc nền: 1 file loop riêng, tách khỏi hệ thống SFX (không chờ load trước khi
 // vào menu). Trình duyệt chặn autoplay có âm thanh trước khi người dùng tương

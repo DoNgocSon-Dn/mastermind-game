@@ -54,6 +54,7 @@
   // thành 2 dải tối chạy ngang màn hình.
   const FILL = 1;
   function fitGameScale() {
+    document.body.classList.toggle('playing', appState === STATE.PLAYING || appState === STATE.RESULT);
     const raw = Math.min(window.innerWidth / APP_W, window.innerHeight / APP_H) * FILL;
     const scale = Math.max(0.25, raw);
     document.documentElement.style.setProperty('--game-scale', String(scale));
@@ -70,12 +71,15 @@
   window.__setPlayingChrome = setPlayingChrome;
 
   let game = null;
+  let customMap = null;
+  let loadingLevel = false;
   let lastTime = 0;
   let mouseX = -1, mouseY = -1;
 
   // ---------------- Khởi tạo game mới cho 1 map ----------------
   function createGame(mapIndex, heroType, endless) {
-    const map = MAPS[mapIndex];
+    const template = mapIndex === 99 ? customMap : MAPS[mapIndex];
+    const map = template.createSession();
     const diff = Difficulty.get();
     // Nâng cấp Nghiên Cứu (Meta) cộng dồn SAU khi đã nhân hệ số độ khó.
     const startLives = Math.max(1, Math.round(CONFIG.economy.startLives * diff.livesMult) + Meta.startLivesBonus());
@@ -112,6 +116,7 @@
     g.hero = new Hero(heroX, heroY, heroType);
     g.globalSkills = new GlobalSkills(g);
     g.ambient = new AmbientFX(map);
+    g.environment = new EnvironmentSystem(map);
     g.castle = new Castle(castle, g);
     g.selectedCastle = false;
     // Chế độ Vô Tận: KHÔNG dùng map.waves gốc (có boss cuối + Phân Thân chiến dịch) —
@@ -139,6 +144,7 @@
     const dt = dtRaw * game.speed;
 
     game.waveManager.update(dt);
+    game.environment.update(dt, game);
 
     for (const t of game.towers) t.update(dt, game);
 
@@ -232,15 +238,15 @@
     // ---- Chế độ VÔ TẬN: không có "thắng", chỉ có "trụ được N đợt" ----
     if (game.endless) {
       const wavesSurvived = Math.max(0, game.waveManager.waveIndex + 1);
-      const isRecord = Endless.reportScore(MAPS[game.mapIndex].id, wavesSurvived);
+      const isRecord = Endless.reportScore(game.map.id, wavesSurvived);
       AssetLoader.playSound('lose', { volume: 0.7 });
-      HUD.showEndlessResult(wavesSurvived, Endless.getBest(MAPS[game.mapIndex].id), isRecord);
+      HUD.showEndlessResult(wavesSurvived, Endless.getBest(game.map.id), isRecord);
       return;
     }
 
     let stars = 0;
     let newlyUnlocked = false;
-    if (win) {
+    if (win && game.mapIndex < MAPS.length) {
       const ratio = game.lives / (game.maxLives || CONFIG.economy.startLives);
       stars = ratio > 0.8 ? 3 : ratio > 0.4 ? 2 : 1;
       const before = SaveSystem.load(MAPS.length);
@@ -251,7 +257,11 @@
     AssetLoader.playSound(win ? 'win' : 'lose', { volume: 0.7 });
     // Trễ chút để không đè lên tiếng thắng màn vừa phát.
     if (newlyUnlocked) setTimeout(() => AssetLoader.playSound('unlock', { volume: 0.6 }), 500);
-    const hasNextLevel = game.mapIndex + 1 < MAPS.length;
+    if (win && game.mapIndex === 99) {
+      const ratio = game.lives / game.maxLives;
+      stars = ratio > 0.8 ? 3 : ratio > 0.4 ? 2 : 1;
+    }
+    const hasNextLevel = game.mapIndex < MAPS.length - 1 && !!MAPS[game.mapIndex + 1];
     HUD.showResult(win, stars, game.lives, hasNextLevel);
   }
 
@@ -265,6 +275,7 @@
     game.map.drawPathGates(ctx, game.waveManager.waveIndex);
     game.map.drawSpawnAndBase(ctx);
     game.ambient.drawGround(ctx); // bóng mây quét trên đất — dưới chân quái/tháp
+    game.environment.draw(ctx);
 
     // Vẽ tháp/lính/Hero/quái CÙNG cây/bụi/đá/nhà/vật cản theo thứ tự Y (painter's
     // algorithm) để vật ở hàng dưới (y lớn hơn) luôn đè lên vật hàng trên — tránh
@@ -287,6 +298,16 @@
     // không bị tháp/cây/quái đứng gần điểm ra quân che mất (xem map.js:drawWaveReadyBadges).
     game.map.drawWaveReadyBadges(ctx, { waveReady: canCallWave(), hoverX: mouseX, hoverY: mouseY });
 
+    if (HUD.isWavePreviewOpen()) {
+      ctx.save();
+      ctx.font = 'bold 11px Segoe UI'; ctx.textAlign = 'center';
+      game.map.spawnButtons.forEach((point, i) => {
+        const y = Math.min(565, point.y + 30);
+        ctx.fillStyle = '#10251f'; ctx.fillRect(point.x - 28, y, 56, 20);
+        ctx.fillStyle = '#ebc779'; ctx.fillText('Đường ' + (i + 1), point.x, y + 14);
+      });
+      ctx.restore();
+    }
     game.map.drawDecorHoverOverlay(ctx, decorUi);
 
     for (const p of game.projectiles) p.draw(ctx);
@@ -475,7 +496,7 @@
     if (typeof SpriteFX !== 'undefined') SpriteFX.burstDust(game, res.x, res.y - 10);
   }
 
-  canvas.addEventListener('mousemove', (e) => {
+  canvas.addEventListener('pointermove', (e) => {
     const p = canvasPos(e);
     mouseX = p.x; mouseY = p.y;
     if (game && appState === STATE.PLAYING && !game.armedTowerType) {
@@ -485,7 +506,8 @@
   canvas.addEventListener('mouseleave', () => { mouseX = -1; mouseY = -1; if (game) game.hoveredTower = null; });
 
   function canCallWave() {
-    return game.waveManager.waitingForConfirm && game.enemies.length === 0;
+    const wm = game.waveManager;
+    return !wm.active && !wm.finishedAllSpawns && game.enemies.length === 0;
   }
 
   function spawnButtonAt(p) {
@@ -497,14 +519,8 @@
   }
 
   canvas.addEventListener('click', (e) => {
-    if (appState !== STATE.PLAYING || !game) return;
+    if (!canInteract()) return;
     const p = canvasPos(e);
-
-    // Khi Tướng đang di chuyển -> KHÔNG CHO phép nhấp bất cứ thao tác nào khác trên map cho tới khi Tướng di chuyển xong!
-    if (isHeroMoving()) {
-      AssetLoader.playSound('error');
-      return;
-    }
 
     if (!game.armedTowerType && !game.globalSkills.pendingActivation && spawnButtonAt(p)) {
       hudCallbacks.onNextWave();
@@ -579,6 +595,7 @@
 
   canvas.addEventListener('contextmenu', (e) => {
     e.preventDefault();
+    if (!canInteract()) return;
     cancelArmedOrPending();
   });
 
@@ -589,15 +606,23 @@
     return el && !el.classList.contains('hidden');
   }
 
+  function canInteract() {
+    return appState === STATE.PLAYING && game && !game.paused && !game.over && !loadingLevel && !isGuideOpen();
+  }
+
   window.addEventListener('keydown', (e) => {
     if (appState !== STATE.PLAYING || !game) return;
-    if (isGuideOpen()) return;
+    if (isGuideOpen() || loadingLevel || e.repeat || e.target.closest('input, select, textarea, [contenteditable="true"]')) return;
+    if (e.key === ' ') {
+      if (e.target.closest('button')) return;
+      e.preventDefault(); togglePause(); return;
+    }
+    if (!canInteract()) return;
     if (e.key === 'Escape') { cancelArmedOrPending(); return; }
     const hotkeyIdx = TOWER_HOTKEYS.indexOf(e.key);
     if (hotkeyIdx !== -1) { hudCallbacks.onArmTower(TOWER_HOTKEY_ORDER[hotkeyIdx]); return; }
     const heroSkill = CONFIG.heroTypes[game.hero.heroType].skill;
     if (e.key.toUpperCase() === heroSkill.key) game.hero.useSkill(heroSkill.id, game, { x: mouseX, y: mouseY });
-    if (e.key === ' ') { e.preventDefault(); togglePause(); }
   });
 
   function tryBuildTower(x, y) {
@@ -633,9 +658,17 @@
   }
 
   function togglePause() {
+    if (!game || game.over || loadingLevel || appState !== STATE.PLAYING || isGuideOpen()) return;
     game.paused = !game.paused;
     HUD.showPauseOverlay(game.paused);
   }
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden && canInteract()) {
+      game.paused = true;
+      HUD.showPauseOverlay(true);
+    }
+  });
 
   // ---------------- Loop ----------------
   function loop(ts) {
@@ -651,7 +684,10 @@
 
   // ---------------- Wiring UI <-> State machine ----------------
   function startLevel(mapIndex, heroType, endless) {
-    const targetMap = MAPS[mapIndex] || MAPS[0];
+    const targetMap = mapIndex === 99 ? customMap : MAPS[mapIndex];
+    if (!targetMap || loadingLevel) return;
+    loadingLevel = true;
+    if (game) game.paused = true;
     const mapName = targetMap ? targetMap.name : 'Bản Đồ';
     showLoadingScreen(`Đang vào trận — ${mapName}${endless ? ' · Vô Tận' : ''}`, { autoFill: true });
     // Ngắt mọi SFX loop của trận CŨ (tiếng đóng đinh tháp đang xây) trước khi dựng
@@ -661,6 +697,9 @@
     // kịp thấy màn chuyển cảnh thay vì chớp tắt ngay, đồng bộ với animation thanh chạy.
     setTimeout(() => {
       game = createGame(mapIndex, heroType, endless);
+      loadingLevel = false;
+      heroSelected = false;
+      mouseX = mouseY = -1;
       appState = STATE.PLAYING;
       document.getElementById('game-container').classList.remove('hidden');
       document.getElementById('screen-menu').classList.add('hidden');
@@ -668,6 +707,9 @@
       HeroSelectUI.hide();
       setPlayingChrome(true);
       HUD.setHero(game.hero.heroType);
+      HUD.setArmedTower(null);
+      HUD.setPendingSkill(null);
+      HUD.setHeroArmed(false);
       HUD.hideResult();
       HUD.showPauseOverlay(false);
       deselectTower();
@@ -678,7 +720,11 @@
       game.paused = true;
       // Vô Tận: bỏ qua thông báo cơ chế riêng của map (hầm/đổi đường... không dùng
       // trong wave vô tận), chỉ hiện bảng hướng dẫn chung nếu chưa từng xem.
-      GuideUI.showQueue(endless ? null : mapIndex, () => { game.paused = false; });
+      GuideUI.showQueue(endless ? null : mapIndex, () => {
+        game.paused = document.hidden;
+        if (game.paused) HUD.showPauseOverlay(true);
+      });
+      if (document.hidden && !isGuideOpen()) { game.paused = true; HUD.showPauseOverlay(true); }
     }, LOADING_AUTOFILL_MS);
   }
 
@@ -693,27 +739,29 @@
   const hudCallbacks = {
     onTogglePause: togglePause,
     onCycleSpeed: () => {
+      if (!canInteract()) return;
       const opts = game.speedOptions;
       const idx = opts.indexOf(game.speed);
       game.speed = opts[(idx + 1) % opts.length];
     },
     onSetSpeed: (rate) => {
+      if (!canInteract()) return;
       if (game.speedOptions.includes(rate)) game.speed = rate;
     },
     onNextWave: () => {
-      if (isHeroMoving()) { AssetLoader.playSound('error'); return; }
+      if (!canInteract()) return;
       if (game.enemies.length > 0) { AssetLoader.playSound('error'); return; }
       game.waveManager.requestNextWaveNow();
     },
     onToggleSpawnMode: () => {
-      if (isHeroMoving()) { AssetLoader.playSound('error'); return; }
+      if (!canInteract()) return;
       game.waveManager.setAutoAdvance(!game.waveManager.autoAdvance);
     },
     onExit: () => exitToLevelSelect(),
     onRestart: () => startLevel(game.mapIndex, game.hero.heroType, game.endless),
     onNextLevel: () => startLevel(game.mapIndex + 1, game.hero.heroType),
     onArmTower: (type) => {
-      if (isHeroMoving()) { AssetLoader.playSound('error'); return; }
+      if (!canInteract()) return;
       if (game.economy.gold < CONFIG.towers[type].levels[0].cost) { AssetLoader.playSound('error'); }
       game.armedTowerType = game.armedTowerType === type ? null : type;
       game.globalSkills.pendingActivation = null;
@@ -723,23 +771,27 @@
       deselectTower();
     },
     onCloseTowerPanel: () => deselectTower(),
+    onTargetPriority: (priority) => {
+      if (!canInteract() || !game.selectedTower) return;
+      if (game.selectedTower.setTargetPriority(priority)) AssetLoader.playSound('select', { volume: 0.4 });
+    },
     onUpgradeCastle: (track) => {
-      if (isHeroMoving()) { AssetLoader.playSound('error'); return; }
+      if (!canInteract()) return;
       const ok = track === 'cannon'
         ? game.castle.upgradeCannon(game.economy)
         : game.castle.upgradeWall(game.economy);
       AssetLoader.playSound(ok ? 'upgrade' : 'error');
     },
     onUpgradeTower: (tower) => {
-      if (isHeroMoving()) { AssetLoader.playSound('error'); return; }
+      if (!canInteract()) return;
       if (tower.upgrade(game.economy)) AssetLoader.playSound('upgrade');
     },
     onBranchTower: (tower, key) => {
-      if (isHeroMoving()) { AssetLoader.playSound('error'); return; }
+      if (!canInteract()) return;
       if (tower.chooseBranch(key, game.economy, game)) AssetLoader.playSound('upgrade');
     },
     onSellTower: (tower) => {
-      if (isHeroMoving()) { AssetLoader.playSound('error'); return; }
+      if (!canInteract()) return;
       if (tower._hammerSfx) { AssetLoader.stopSound(tower._hammerSfx); tower._hammerSfx = null; }
       game.economy.earn(tower.sellValue());
       game.towers = game.towers.filter(t => t !== tower);
@@ -747,13 +799,13 @@
       deselectTower();
     },
     onGlobalSkill: (key) => {
-      if (isHeroMoving()) { AssetLoader.playSound('error'); return; }
+      if (!canInteract()) return;
       game.armedTowerType = null; HUD.setArmedTower(null);
       if (heroSelected) setHeroSelected(false);
       if (game.globalSkills.pendingActivation === key) { game.globalSkills.pendingActivation = null; HUD.setPendingSkill(null); }
       else { game.globalSkills.requestActivate(key); HUD.setPendingSkill(game.globalSkills.pendingActivation); }
     },
-    onHeroSkill: (key) => game.hero.useSkill(key, game, { x: mouseX, y: mouseY }),
+    onHeroSkill: (key) => { if (canInteract()) game.hero.useSkill(key, game, { x: mouseX, y: mouseY }); },
   };
   HUD.init(hudCallbacks);
   GuideUI.init();
@@ -775,7 +827,8 @@
 
   MapEditorUI.init({
     onPlayCustom: (customMapDef) => {
-      MAPS[99] = customMapDef;
+      customMap = customMapDef;
+      MapEditorUI.hide();
       HeroSelectUI.show(99);
     },
   });

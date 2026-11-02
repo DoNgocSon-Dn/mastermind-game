@@ -16,13 +16,14 @@ const GuideUI = (() => {
   let stepIndex = 0;
 
   const GENERAL_GUIDE_STEPS = [
-    { icon: '🏗️', title: 'Xây Tháp', text: 'Bấm nút tháp dưới màn hình (hoặc phím 1-4: Cung Thủ / Doanh Trại / Pháp Sư / Pháo Đài) rồi bấm vào vị trí muốn đặt.' },
+    { icon: '🏗️', title: 'Xây Tháp', text: 'Bấm nút tháp ở góc trên trái (hoặc phím 1-4: Cung Thủ / Doanh Trại / Pháp Sư / Pháo Đài), rồi bấm vào vị trí muốn đặt. Bạn vẫn có thể xây khi tướng đang di chuyển.' },
     { icon: '⬆️', title: 'Nâng Cấp & Bán', text: 'Bấm vào tháp đã xây để nâng cấp, bán, hoặc chọn nhánh chuyên biệt khi tháp đạt cấp cao nhất.' },
+    { icon: '🎯', title: 'Ưu Tiên Mục Tiêu', text: 'Chọn tháp Cung, Pháp Sư hoặc Pháo Đài rồi chọn Gần thành, Máu cao hoặc Gần tháp trong bảng thông tin. Tháp sẽ chọn lại mục tiêu trước mỗi phát bắn.' },
     { icon: '🗡️', title: 'Điều Khiển Tướng', text: 'Bấm vào Tướng để chọn, rồi bấm vào vị trí khác trên bản đồ để di chuyển. Phím Q để dùng kỹ năng của Tướng.' },
-    { icon: '🌊', title: 'Gọi Đợt Quái', text: 'Bấm vào cổng ra quân hoặc nút ⏩ để gọi đợt quái tiếp theo khi đã sẵn sàng.' },
+    { icon: '🌊', title: 'Gọi Đợt Quái', text: 'Xem bảng Đợt tiếp theo để biết loại quái và đường vào. Bấm Gọi đợt hoặc cổng ra quân khi sẵn sàng; đợt đầu cũng chờ bạn chuẩn bị. Nút ⏩ ở góc trên phải bật hoặc tắt chế độ tự động gọi đợt.' },
     { icon: '🪨', title: 'Dọn Vật Cản', text: 'Vật cản (đá, cây, nhà đổ...) có thể dọn bằng vàng để mở thêm chỗ đặt tháp.' },
     { icon: '❤️', title: 'Giữ Mạng Thành', text: 'Để quái lọt được vào thành sẽ mất Mạng — hết Mạng là thua, dọn sạch mọi đợt quái là thắng.' },
-    { icon: '⏯️', title: 'Tạm Dừng & Tua Nhanh', text: 'Phím Space để Tạm Dừng, nút tốc độ ở góc dưới để tua nhanh trận đấu.' },
+    { icon: '⏯️', title: 'Tạm Dừng & Tua Nhanh', text: 'Bấm nút tạm dừng hoặc phím Space để dừng trận. Các nút 1x, 2x, 3x ở góc trên phải đổi tốc độ. Game tự tạm dừng khi bạn chuyển tab.' },
   ];
 
   function init() {

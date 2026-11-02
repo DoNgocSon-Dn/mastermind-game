@@ -1,8 +1,8 @@
 // ============================================================
 // WAVE.JS — Spawn quái theo wave, dữ liệu wave định nghĩa trong map.js
 // Mỗi wave: [{ type:'normal', count:10, interval:1.0, delay:0 }, ...]
-// Chỉ wave đầu tiên tự bắt đầu (sau timeToNextWave); từ wave thứ 2 trở đi,
-// WaveManager dừng hẳn (waitingForConfirm) và chờ requestNextWaveNow() do
+// Mặc định mọi wave chờ xác nhận để người chơi xem trước và bố trí tháp.
+// WaveManager chờ requestNextWaveNow() do
 // người chơi bấm xác nhận — TRỪ KHI autoAdvance đang bật, khi đó wave kế tiếp
 // tự bắt đầu ngay khi wave hiện tại spawn xong, nối tiếp liên tục hết toàn bộ
 // các wave theo thứ tự cho tới khi người chơi bấm nút tắt lại.
@@ -31,6 +31,13 @@ class WaveManager {
   get currentWaveNumber() { return this.endless ? this.waveIndex + 1 : Math.min(this.waveIndex + 1, this.totalWaves); }
   // Đã xong wave hiện tại (hoặc chưa xây gì) và còn wave sau — đang chờ người chơi xác nhận.
   get waitingForConfirm() { return !this.active && this.waveIndex >= 0 && !this.finishedAllSpawns; }
+
+  previewNextWave() {
+    const index = this.waveIndex + 1;
+    if (this.finishedAllSpawns) return null;
+    const groups = this.waveDefs[index] || (this.endlessGen ? this.endlessGen(index) : null);
+    return groups ? { number: index + 1, groups: groups.map(group => ({ ...group })) } : null;
+  }
 
   setAutoAdvance(on) {
     this.autoAdvance = on;
@@ -66,9 +73,9 @@ class WaveManager {
   update(dt) {
     if (!this.active) {
       if (this.finishedAllSpawns) return;
-      // Chỉ tự động đếm giờ cho wave đầu tiên. Từ wave 2 trở đi, waitingForConfirm
+      // Chỉ đếm giờ wave đầu khi bật tự động. Từ wave 2 trở đi, waitingForConfirm
       // sẽ đứng yên ở đây mãi cho tới khi requestNextWaveNow() được gọi.
-      if (this.waveIndex === -1) {
+      if (this.waveIndex === -1 && this.autoAdvance) {
         this.timeToNextWave -= dt;
         if (this.timeToNextWave <= 0) this.startNextWave();
       }

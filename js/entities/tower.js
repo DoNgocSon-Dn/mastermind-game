@@ -17,6 +17,7 @@ class Tower {
     this.skill2Cooldown = 0;
     this.healCooldown = 0;
     this.target = null;
+    this.targetPriority = 'first';
     this.radius = 20;
     this.selected = false;
 
@@ -183,7 +184,7 @@ class Tower {
     }
 
     this.cooldown -= dt;
-    if (!this.target || this.target.dead || this.target.hidden || this._outOfRange(this.target) || this._inBlindSpot(this.target) || (this.target.isFlying && !this._canHitFlying())) {
+    if (this.cooldown <= 0 || !this.target || this.target.dead || this.target.hidden || this._outOfRange(this.target) || this._inBlindSpot(this.target) || (this.target.isFlying && !this._canHitFlying())) {
       this.target = this._selectTarget(game);
     }
     if (this.target && this.cooldown <= 0) {
@@ -210,18 +211,30 @@ class Tower {
   }
 
   _canHitFlying() {
-    if (this.branch) return !!this.stats.canHitFlying;
-    return !!this.cfg.canHitFlying;
+    return !!(this.stats.canHitFlying ?? this.cfg.canHitFlying);
+  }
+
+  setTargetPriority(priority) {
+    if (this.type === 'barracks' || !['first', 'strongest', 'nearest'].includes(priority)) return false;
+    this.targetPriority = priority;
+    this.target = null;
+    return true;
   }
 
   _selectTarget(game) {
-    let best = null, bestProgress = -1;
+    let best = null, bestScore = -Infinity, bestRemaining = Infinity;
     const minR = this.minRange;
     for (const e of game.enemies) {
-      if (e.dead || e.hidden) continue;
+      if (e.dead || e.hidden || e.reachedEnd || e.hp <= 0) continue;
       if (e.isFlying && !this._canHitFlying()) continue;
       const d = Math.hypot(e.x - this.x, e.y - this.y);
-      if (d <= this.range && d >= minR && e.progress > bestProgress) { bestProgress = e.progress; best = e; }
+      if (d > this.range || d < minR) continue;
+      // Remaining path distance compares routes of different lengths correctly.
+      const remaining = Math.max(0, e.totalLength - e.traveled);
+      const score = this.targetPriority === 'strongest' ? e.hp : this.targetPriority === 'nearest' ? -d : -remaining;
+      if (score > bestScore || (score === bestScore && remaining < bestRemaining)) {
+        bestScore = score; bestRemaining = remaining; best = e;
+      }
     }
     return best;
   }

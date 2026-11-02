@@ -54,5 +54,5 @@ const Endless = (() => {
     return g;
   }
 
-  return { getBest, reportScore, genWave };
+  return { getBest, reportScore, genWave, snapshot: () => ({ ..._load() }), restore: (data) => _save(data) };
 })();

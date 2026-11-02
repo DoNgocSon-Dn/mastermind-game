@@ -25,11 +25,17 @@ const MenuUI = (() => {
     if (btnResearch && onResearchClicked) btnResearch.onclick = () => { AssetLoader.playSound('select'); onResearchClicked(); };
     document.getElementById('btn-settings').onclick = () => els.settingsPanel.classList.toggle('hidden');
     document.getElementById('btn-settings-close').onclick = () => els.settingsPanel.classList.add('hidden');
-    document.getElementById('chk-mute').onchange = (e) => { SoundSettings.muted = e.target.checked; };
-    document.getElementById('rng-volume').oninput = (e) => { SoundSettings.sfxVolume = parseFloat(e.target.value); };
-    document.getElementById('chk-mute-music').onchange = (e) => { SoundSettings.musicMuted = e.target.checked; MusicPlayer.applySettings(); };
-    document.getElementById('rng-music-volume').oninput = (e) => { SoundSettings.musicVolume = parseFloat(e.target.value); MusicPlayer.applySettings(); };
+    for (const [id, field, checkbox] of [['chk-mute', 'muted', true], ['rng-volume', 'sfxVolume', false], ['chk-mute-music', 'musicMuted', true], ['rng-music-volume', 'musicVolume', false]]) {
+      const control = document.getElementById(id);
+      control[checkbox ? 'checked' : 'value'] = SoundSettings[field];
+      control[checkbox ? 'onchange' : 'oninput'] = (e) => {
+        SoundSettings[field] = checkbox ? e.target.checked : Number(e.target.value);
+        SoundSettings.save();
+        MusicPlayer.applySettings();
+      };
+    }
     document.getElementById('back-to-menu').onclick = () => showMainMenu();
+    _initBackupControls();
 
     // Trình duyệt chặn autoplay có âm thanh — chỉ phát nhạc nền sau tương tác đầu tiên.
     document.addEventListener('pointerdown', () => MusicPlayer.start(), { once: true });
@@ -58,6 +64,58 @@ const MenuUI = (() => {
     _initDevModeUnlock();
 
     onSelectLevel = onLevelSelected;
+  }
+
+  function _initBackupControls() {
+    const status = document.getElementById('backup-status');
+    const fileInput = document.getElementById('file-import-save');
+    document.getElementById('btn-export-save').onclick = () => {
+      const data = { format: 'thu-thanh-save', version: 1, progress: SaveSystem.snapshot(), research: Meta.snapshot(), endless: Endless.snapshot() };
+      const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+      const link = document.createElement('a');
+      link.href = url; link.download = 'thu-thanh-tien-do.json'; link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      status.textContent = 'Đã tạo tệp sao lưu tiến độ, nghiên cứu và kỷ lục vô tận.';
+    };
+    document.getElementById('btn-import-save').onclick = () => fileInput.click();
+    fileInput.onchange = async () => {
+      const file = fileInput.files[0];
+      if (!file) return;
+      try {
+        if (file.size > 100000) throw new Error('Tệp sao lưu quá lớn.');
+        const data = JSON.parse(await file.text());
+        if (data?.format !== 'thu-thanh-save' || data.version !== 1 || !Array.isArray(data.progress?.maps) || data.progress.maps.length !== 16) throw new Error('Tệp không đúng định dạng sao lưu Thủ Thành.');
+        let stars = 0, spent = 0;
+        for (const entry of data.progress.maps) {
+          if (!entry || typeof entry.unlocked !== 'boolean' || !Number.isInteger(entry.stars) || entry.stars < 0 || entry.stars > 3) throw new Error('Tiến độ trong tệp không hợp lệ.');
+          stars += entry.stars;
+        }
+        const research = {};
+        for (const key in Meta.UPGRADES) {
+          const level = data.research?.[key] ?? 0;
+          const costs = Meta.UPGRADES[key].cost;
+          if (!Number.isInteger(level) || level < 0 || level > costs.length) throw new Error('Nghiên cứu trong tệp không hợp lệ.');
+          research[key] = level;
+          spent += costs.slice(0, level).reduce((sum, cost) => sum + cost, 0);
+        }
+        if (spent > stars) throw new Error('Điểm nghiên cứu vượt quá số sao đã đạt.');
+        const endless = {};
+        for (const map of MAPS) {
+          const score = data.endless?.[map.id] ?? 0;
+          if (!Number.isSafeInteger(score) || score < 0) throw new Error('Kỷ lục vô tận không hợp lệ.');
+          endless[map.id] = score;
+        }
+        // Validate the entire file before changing any live progress.
+        SaveSystem.save(data.progress);
+        Meta.restore(research);
+        Endless.restore(endless);
+        ResearchUI.refreshBadge();
+        updateMapEditorButtonsVisibility();
+        status.textContent = SaveSystem.usingMemory ? 'Đã khôi phục trong phiên này. Trình duyệt hiện không cho lưu lâu dài.' : 'Đã khôi phục tiến độ, nghiên cứu và kỷ lục vô tận.';
+      } catch (error) {
+        status.textContent = error instanceof SyntaxError ? 'Không đọc được tệp JSON. Tiến độ hiện tại được giữ nguyên.' : `${error.message} Tiến độ hiện tại được giữ nguyên.`;
+      } finally { fileInput.value = ''; }
+    };
   }
 
   function updateMapEditorButtonsVisibility() {

@@ -136,7 +136,7 @@ class Soldier {
         return;
       } else {
         this.state = 'Engage';       // chạy ra đón đầu
-        const step = 82 * dt;
+        const step = 82 * (game.environment?.speedMultiplier(this, 'ally') ?? 1) * dt;
         this.facingLeft = t.x < this.x;
         this.x += ((t.x - this.x) / dTar) * step;
         this.y += ((t.y - this.y) / dTar) * step;
@@ -161,7 +161,7 @@ class Soldier {
     if (dist > 4) {
       this.state = 'Move';
       this.facingLeft = dx < 0;
-      const step = 75 * dt;
+      const step = 75 * (game.environment?.speedMultiplier(this, 'ally') ?? 1) * dt;
       if (dist < step) { this.x = this.homeX; this.y = this.homeY; }
       else { this.x += (dx / dist) * step; this.y += (dy / dist) * step; }
       this._animate(dt, true);

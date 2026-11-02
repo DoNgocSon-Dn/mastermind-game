@@ -22,23 +22,33 @@ const SaveSystem = (() => {
   if (useMemory) console.warn('localStorage không khả dụng — tiến độ chỉ lưu trong phiên chơi hiện tại.');
 
   function defaultData(mapCount) {
+    mapCount = Math.max(1, Math.min(16, Number.isInteger(mapCount) ? mapCount : 16));
     const maps = [];
     for (let i = 0; i < mapCount; i++) maps.push({ unlocked: i === 0, stars: 0 });
+    return { maps };
+  }
+
+  function normalize(data, mapCount) {
+    const count = Math.max(1, Math.min(16, Number.isInteger(mapCount) ? mapCount : 16));
+    const source = data && Array.isArray(data.maps) ? data.maps : [];
+    const maps = Array.from({ length: count }, (_, i) => {
+      const entry = source[i];
+      const stars = entry && Number.isFinite(entry.stars) ? Math.max(0, Math.min(3, Math.floor(entry.stars))) : 0;
+      return { unlocked: i === 0 || !!(entry && entry.unlocked === true) || stars > 0, stars };
+    });
+    maps.forEach((entry, i) => { if (entry.stars > 0 && maps[i + 1]) maps[i + 1].unlocked = true; });
     return { maps };
   }
 
   // Bản THẬT, chưa áp Dev Mode — dùng nội bộ để ghi/đọc tiến trình lưu, tránh việc
   // bật Dev Mode (xem devmode.js) vô tình ghi "đã mở khoá hết" đè lên save thật.
   function _loadRaw(mapCount) {
-    if (useMemory) return memoryFallback || (memoryFallback = defaultData(mapCount));
+    if (useMemory) return normalize(memoryFallback, mapCount);
     try {
       const raw = localStorage.getItem(KEY);
       if (!raw) return defaultData(mapCount);
       const parsed = JSON.parse(raw);
-      if (!parsed.maps || !Array.isArray(parsed.maps)) return defaultData(mapCount);
-      const maps = parsed.maps.slice(0, mapCount);
-      while (maps.length < mapCount) maps.push({ unlocked: maps.length === 0, stars: 0 });
-      return { maps };
+      return normalize(parsed, mapCount);
     } catch (e) {
       return defaultData(mapCount);
     }
@@ -54,15 +64,18 @@ const SaveSystem = (() => {
   }
 
   function save(data) {
+    data = normalize(data, 16);
     if (useMemory) { memoryFallback = data; return; }
     try { localStorage.setItem(KEY, JSON.stringify(data)); } catch (e) { useMemory = true; memoryFallback = data; }
   }
 
   function reportResult(mapCount, mapIndex, stars) {
-    if (mapIndex >= 16) return;
+    if (!Number.isInteger(mapIndex) || mapIndex < 0 || mapIndex >= Math.min(16, mapCount)) return;
+    if (!Number.isFinite(stars) || stars < 1) return;
+    stars = Math.min(3, Math.floor(stars));
     const data = _loadRaw(mapCount);
     if (stars > (data.maps[mapIndex].stars || 0)) data.maps[mapIndex].stars = stars;
-    if (mapIndex + 1 < mapCount) data.maps[mapIndex + 1].unlocked = true;
+    if (mapIndex + 1 < data.maps.length) data.maps[mapIndex + 1].unlocked = true;
     save(data);
     return data;
   }
@@ -70,8 +83,8 @@ const SaveSystem = (() => {
   function isGameCompleted(mapCount) {
     if (typeof DevMode !== 'undefined' && DevMode.enabled) return true;
     const data = _loadRaw(mapCount);
-    return !!(data.maps && data.maps[mapCount - 1] && data.maps[mapCount - 1].stars > 0);
+    return !!(data.maps[data.maps.length - 1].stars > 0);
   }
 
-  return { load, save, reportResult, isGameCompleted, get usingMemory() { return useMemory; } };
+  return { load, save, snapshot: () => _loadRaw(16), reportResult, isGameCompleted, get usingMemory() { return useMemory; } };
 })();

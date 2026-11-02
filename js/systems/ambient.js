@@ -31,6 +31,7 @@ class AmbientFX {
     this.theme = map.theme;
     this.cfg = AMBIENT_THEMES[this.theme] || AMBIENT_THEMES.spring;
     this.t = 0;
+    this.motionPreference = typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : null;
 
     // Chiều gió chung cho cả mây lẫn hạt rơi (mỗi map một hướng nhẹ khác nhau).
     const rng = mulberry32(4700 + (map.id || 0));
@@ -56,6 +57,15 @@ class AmbientFX {
     this.particles = [];
     for (let i = 0; i < this.cfg.count; i++) this.particles.push(this._makeParticle(rng, true));
     this._rng = rng;
+    // Wildlife stays near its own patch, away from the road and combat silhouettes.
+    this.wildlife = [];
+    this.fireflies = map.id === 9 || map.id === 10;
+    if (this.theme === 'spring' || this.fireflies) {
+      for (let i = 0; i < 40 && this.wildlife.length < 7; i++) {
+        const x = 60 + rng() * (W - 120), y = 100 + rng() * (H - 160);
+        if (!_nearAnyPath(map.paths, x, y, 75)) this.wildlife.push({ x, y, phase: rng() * Math.PI * 2 });
+      }
+    }
 
     // Vignette nhuộm tông mùa — bake 1 lần ra canvas phụ (gradient mỗi frame khá tốn).
     this._vignette = this._buildVignette();
@@ -118,7 +128,7 @@ class AmbientFX {
   }
 
   update(dt) {
-    if (dt <= 0) return;
+    if (dt <= 0 || this.motionPreference?.matches) return;
     this.t += dt;
     const W = this.W, H = this.H;
 
@@ -138,7 +148,7 @@ class AmbientFX {
     for (const p of this.particles) {
       p.rot += p.spin * dt;
       const swayX = Math.sin(this.t * p.swaySpeed + p.phase) * p.sway;
-      p.x += (drift + swayX * dt);
+      p.x += (drift + swayX) * dt;
       p.y += p.vy * dt;
       // vòng lại khi ra khỏi khung
       if (p.vy >= 0 && p.y > H + 12) { const np = this._makeParticle(this._rng, false); Object.assign(p, np); }
@@ -166,6 +176,23 @@ class AmbientFX {
   // Hạt rơi + vignette — vẽ SAU cùng (trước HUD). Không còn mây trên trời.
   drawSky(ctx) {
     ctx.save();
+    for (const bug of this.wildlife) {
+      const phase = this.t * 0.8 + bug.phase;
+      const x = Math.round(bug.x + Math.sin(phase) * 14);
+      const y = Math.round(bug.y + Math.cos(phase * 1.3) * 8);
+      if (this.fireflies) {
+        ctx.globalAlpha = 0.3 + 0.5 * (0.5 + 0.5 * Math.sin(phase * 2));
+        ctx.fillStyle = '#cbe88c'; ctx.fillRect(x, y, 2, 2);
+        ctx.globalAlpha *= 0.15; ctx.fillRect(x - 3, y - 3, 8, 8);
+      } else {
+        const wing = 1 + Math.round(Math.abs(Math.sin(this.t * 8 + bug.phase)) * 2);
+        ctx.globalAlpha = 0.75;
+        ctx.fillStyle = '#fff0bb';
+        ctx.fillRect(x - wing, y - 1, wing, 3); ctx.fillRect(x + 1, y - 1, wing, 3);
+        ctx.fillStyle = '#70543d'; ctx.fillRect(x, y, 1, 3);
+      }
+    }
+    ctx.globalAlpha = 1;
 
     // Hạt rơi — thưa + mờ, chỉ gợi không khí. `a` = alpha nền theo theme.
     const kind = this.cfg.kind;
