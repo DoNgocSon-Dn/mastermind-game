@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "id": "matermind-thu-thanh",
+  "name": "MaterMind-Thủ Thành",
+  "version": "1.0.0",
+  "description": "Bảo vệ vương quốc trong game thủ thành đồ họa pixel. Xây dựng và nâng cấp tháp, chọn tướng, sử dụng kỹ năng và điều phối quân lính để vượt qua 16 màn chiến dịch hoặc thử sức trong chế độ vô tận.",
+  "shortDescription": "Xây tháp, chỉ huy tướng và bảo vệ vương quốc qua 16 màn chiến dịch pixel.",
+  "entry": "index.html",
+  "engine": "canvas2d",
+  "orientation": "landscape",
+  "minViewport": { "width": 960, "height": 600 },
+  "category": "strategy",
+  "tags": ["tower-defense", "pixel-art", "strategy"],
+  "ageRating": "E10",
+  "languages": ["vi"],
+  "controls": {
+    "keyboard": "1–4 chọn tháp, Q dùng kỹ năng tướng, Space tạm dừng, Escape hủy thao tác.",
+    "mouse": "Nhấp để xây tháp, nâng cấp, chọn mục tiêu và điều khiển tướng.",
+    "touch": "Chạm các nút và vị trí trên bản đồ; xoay ngang khi vào trận."
+  },
+  "assets": {
+    "icon": "assets/store/icon.png",
+    "cover": "assets/store/cover.png",
+    "screenshots": ["assets/store/screenshot-1.png"]
+  },
+  "permissions": ["audio", "fullscreen", "persistent-storage"],
+  "networkAllowlist": [],
+  "attestation": {
+    "ownsRights": true,
+    "noThirdPartyTracking": true,
+    "containsAds": false,
+    "containsIap": false
+  }
+}
