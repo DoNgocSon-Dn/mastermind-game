@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
-  "id": "matermind-thu-thanh",
-  "name": "MaterMind-Thủ Thành",
-  "version": "1.0.0",
-  "description": "Bảo vệ vương quốc trong game thủ thành đồ họa pixel. Xây dựng và nâng cấp tháp, chọn tướng, sử dụng kỹ năng và điều phối quân lính để vượt qua 16 màn chiến dịch hoặc thử sức trong chế độ vô tận.",
-  "shortDescription": "Xây tháp, chỉ huy tướng và bảo vệ vương quốc qua 16 màn chiến dịch pixel.",
+  "id": "mastermind-thu-thanh",
+  "name": "MasterMind-Thủ Thành",
+  "version": "1.0.1",
+  "description": "Game từ studio 8HANDS. Bảo vệ vương quốc trong game thủ thành đồ họa pixel. Xây dựng và nâng cấp tháp, chọn tướng, sử dụng kỹ năng và điều phối quân lính để vượt qua 16 màn chiến dịch hoặc thử sức trong chế độ vô tận.",
+  "shortDescription": "Game từ studio 8HANDS: xây tháp, chỉ huy tướng và bảo vệ vương quốc qua 16 màn.",
   "entry": "index.html",
   "engine": "canvas2d",
   "orientation": "landscape",
@@ -32,3 +32,4 @@
     "containsIap": false
   }
 }
+

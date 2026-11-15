@@ -44,3 +44,5 @@ Có thể đặt `TD_PLAYWRIGHT_PATH` trỏ tới module Playwright đã cài s�
 `campaign-smoke.cjs` kiểm tra khởi tạo, hiển thị và mô phỏng ngắn trên cả 16 màn với mọi loại quái và hai nhánh tháp. Đây là kiểm tra lỗi chạy, không thay thế việc chơi hết chiến dịch để đánh giá cân bằng.
 
 Website: https://mastermind-kappa-ashen.vercel.app/
+
+Phát triển bởi studio **8HANDS**.
